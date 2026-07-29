@@ -21,7 +21,12 @@ func main() {
 		os.Exit(2)
 	}
 	switch os.Args[1] {
-	case "serve", "backup", "useradd", "contacts":
+	case "serve":
+		if err := runServe(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "wasi: serve: %v\n", err)
+			os.Exit(1)
+		}
+	case "backup", "useradd", "contacts":
 		fmt.Fprintf(os.Stderr, "wasi: %s is not implemented yet\n", os.Args[1])
 		os.Exit(1)
 	default:

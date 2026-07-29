@@ -4,3 +4,6 @@
 .env
 /data/
 /backups/
+__pycache__/
+*.pyc
+chaskisim-state.json

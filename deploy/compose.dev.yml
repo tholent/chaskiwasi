@@ -83,11 +83,16 @@ services:
       retries: 10
 
   # --- wasi: the server under test -----------------------------------------
-  #
-  # cmd/wasi's `serve` subcommand is not implemented until a later wave
-  # (implementation-plan.md, Wave 2B/3B); until then this container starts
-  # and exits immediately. It's still wired up here so nothing needs to
-  # change in this file when `serve` lands — see deploy/README.md.
+
+  # §12.1: Wasi's two listeners need two certificates before it will start.
+  # The device leaf is signed by a local CA so the simulator can pin it and
+  # exercise the real §12.2 trust path rather than skipping verification.
+  wasi-certs:
+    image: alpine:3.20
+    volumes:
+      - wasi_tls:/config/tls
+      - ./wasi/gen-certs.sh:/gen-certs.sh:ro
+    entrypoint: ["sh", "/gen-certs.sh", "/config/tls"]
 
   wasi:
     build:
@@ -98,14 +103,25 @@ services:
         condition: service_healthy
       strip:
         condition: service_healthy
+      wasi-certs:
+        condition: service_completed_successfully
     # §14: read-only rootfs except /data. The Dockerfile can't declare this
     # itself (it's a runtime flag, not an image property) — this is where
     # it actually gets enforced.
     read_only: true
     volumes:
       - ./wasi.example.toml:/config/wasi.toml:ro
+      - wasi_tls:/config/tls:ro
+      - maddy_tls:/config/maddy-tls:ro
       - wasi_data:/data
     environment:
+      # Fixture-only: maddy serves a self-signed cert, and Fastmail (which
+      # this stands in for) serves a publicly-trusted one. Go reads
+      # SSL_CERT_FILE for the system pool, so the fixture's CA is trusted
+      # here without Wasi growing a "skip TLS verification" config knob —
+      # a knob that would exist in production builds forever to solve a
+      # problem that only exists in this file.
+      SSL_CERT_FILE: /config/maddy-tls/fullchain.pem
       WASI_IMAP_PASSWORD: ${MADDY_TEST_PASSWORD:-devpassword123}
       WASI_COOKIE_SIGNING_KEY: ${WASI_COOKIE_SIGNING_KEY:-dev-cookie-signing-key-not-for-prod}
       WASI_SERVICE_TOKEN: ${WASI_SERVICE_TOKEN:-dev-shared-service-token}
@@ -114,6 +130,7 @@ services:
       - "127.0.0.1:18444:8444" # guardian web UI (§12.1)
 
 volumes:
+  wasi_tls:
   maddy_data:
   maddy_tls:
   wasi_data:

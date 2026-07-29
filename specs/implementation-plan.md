@@ -191,6 +191,31 @@ decision is made once, at arrival; history is immutable." So reconciliation
 quarantines strangers only — senders that do not resolve against the full table,
 tombstones and past addresses included. Wave 2 implements it that way.
 
+**F-3 · §4.7 cannot express a permanent SMTP rejection. Needs a wire change —
+open decision, not resolved.**
+The four ack statuses are all terminal, and the send in step 4 precedes the ack
+in step 5. That covers transient failure (retry) and pre-send rejection
+(`invalid`, `rejected_inactive`, `rejected_unknown_contact`), but nothing covers
+a **permanent** SMTP rejection after the send is attempted — a 5xx for a
+recipient that will never accept mail. The letter cannot be honestly acked with
+any existing status, so it stays in the outbox and the device resends it every
+sync, forever, while the child sees "still on the road" indefinitely.
+
+Wave 2 chose infinite retry over mis-acking `invalid`, because losing a letter is
+the one failure §4.7 refuses to buy — but that is the least-bad reading of a
+contract with a hole in it, not a fix. The fix is a fifth status
+(`rejected_undeliverable`), which changes the wire contract and the firmware's
+ack handling, so it is the owner's call. Until then the behaviour above stands
+and is documented in `internal/syncsvc`.
+
+**F-4 · V-8 conflicts with §6.2 as literally worded.**
+V-8 asserts outbound carries no `Re:`; §6.2 says a child-supplied subject is used
+*verbatim*. A child who types "Re: camping" produces a letter that fails a literal
+substring grep while breaking no rule. The binding reading: **the server must
+never add threading headers or a `Re:` prefix**, and V-8 tests that, not the
+absence of the substring. The e2e implementation of V-8 must be written the same
+way or it will fail on a legitimate letter.
+
 ## 5. Risks tracked during the build
 
 - **maddy ≠ Fastmail.** No spam foldering, IDLE and MOVE semantics differ. V-16 injects the

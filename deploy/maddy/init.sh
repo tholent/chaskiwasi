@@ -1,5 +1,5 @@
 #!/bin/sh
-# init.sh — provisions the one test mailbox this fixture needs, once.
+# init.sh — provisions the test mailboxes this fixture needs, once.
 #
 # Runs as a one-shot compose service using the maddy binary itself in CLI
 # mode (no server process involved — the CLI opens the same SQLite state
@@ -37,6 +37,24 @@ if maddy imap-mboxes list "$USER" | grep -qE '^Held\b'; then
 else
     maddy imap-mboxes create "$USER" Held
     echo "init: created Held mailbox for $USER"
+fi
+
+# The relative's mailbox. Without a local account for the far end, maddy
+# rejects outbound submission with "501 User does not exist", so nothing can
+# verify that a composed letter actually arrives — V-1 asserts exactly that
+# ("compose lands in maddy for the right address"), and the child's own
+# account cannot stand in for it: outbound resolves through the ayllu to a
+# *different* address by construction (§3.1), which is the whole point.
+#
+# This account is a recipient only. It never authenticates, so it needs no
+# credentials — just storage for delivered mail.
+RELATIVE="${MADDY_RELATIVE_USER:-theo@chaski.test}"
+
+if maddy imap-acct list | grep -qxF "$RELATIVE"; then
+    echo "init: storage account for $RELATIVE already exists"
+else
+    maddy imap-acct create "$RELATIVE"
+    echo "init: created storage account for $RELATIVE"
 fi
 
 echo "init: done"

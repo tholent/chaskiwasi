@@ -21,6 +21,12 @@ COPY . .
 # across the arm64/amd64 split without per-arch libc concerns.
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/wasi ./cmd/wasi
 
+# An empty /data owned by the runtime uid, staged here so the next stage can
+# COPY it with that ownership. See the VOLUME comment below for why this
+# matters — distroless has no shell, so a RUN mkdir/chown in the final stage
+# is not available.
+RUN mkdir -p /out/data
+
 # distroless/static-debian12:nonroot: no shell, no package manager, nothing
 # but the binary's own dynamic-linker-free runtime needs — and it already
 # runs as a non-root, unprivileged user (65532:65532).
@@ -34,6 +40,14 @@ COPY --from=build /out/wasi /usr/local/bin/wasi
 # to. The read-only-rootfs enforcement itself is a deploy-time flag
 # (`docker run --read-only` / compose's `read_only: true`), not something a
 # Dockerfile can declare — deploy/compose.dev.yml sets it there.
+#
+# /data must exist in the image, owned by the runtime uid, BEFORE the VOLUME
+# declaration. Docker seeds a fresh named volume from the image's contents at
+# that path, ownership included; with no such path in the image the volume is
+# created root-owned and the non-root process cannot write to it — Wasi fails
+# at startup with "permission denied" creating its first atomic temp file.
+# Running as root would "fix" it by giving up §14.
+COPY --from=build --chown=65532:65532 /out/data /data
 VOLUME ["/data"]
 
 USER nonroot:nonroot
