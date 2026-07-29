@@ -1,0 +1,6 @@
+/wasi
+/dist/
+*.test
+.env
+/data/
+/backups/
