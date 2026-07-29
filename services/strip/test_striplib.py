@@ -47,20 +47,31 @@ class GoldenCorpusTest(unittest.TestCase):
                 result = strip(text, format_flowed)
                 self.assertEqual(result.body, expected_body)
 
-    def test_signature_only_is_not_touched_by_quotations(self):
-        # talon.quotations strips *quoted reply chains*, not sender
-        # signatures — that split matters here because the Go fallback
-        # (internal/strip, §5.3) is deliberately more aggressive and *does*
-        # cut at "-- " when this service is unreachable. This test pins
-        # down the real service's honest behavior so that asymmetry stays
-        # visible rather than being "discovered" later by a confused reader
-        # comparing the two.
+    def test_signature_is_cut_matching_the_go_fallback(self):
+        # talon.quotations strips *quoted reply chains* and does not touch
+        # sender signatures — talon's signature support is a separate,
+        # ML-backed module §11.1 deliberately does not pull in. So this
+        # service applies the "-- " rule itself (striplib.cut_at_signature).
+        #
+        # Without it, the live service and the in-process Go fallback
+        # (internal/strip, §5.3) would disagree on the same letter, and which
+        # version a child saw would depend on whether a Python container
+        # happened to be up when they synced. §5.2's determinism claim is
+        # what forbids that.
         path = os.path.join(TESTDATA_DIR, "signature_delimiter.eml")
         text, format_flowed = _load_case(path)
         result = strip(text, format_flowed)
-        self.assertFalse(result.trimmed)
-        self.assertEqual(result.removed_bytes, 0)
-        self.assertIn("Uncle Theo", result.body)
+        self.assertTrue(result.trimmed)
+        self.assertGreater(result.removed_bytes, 0)
+        self.assertNotIn("Uncle Theo", result.body)
+        self.assertIn("Good luck at the meet", result.body)
+
+    def test_bare_double_dash_is_not_a_delimiter(self):
+        # "-- " (with the trailing space) is the standard delimiter; a bare
+        # "--" is ordinary text often enough that cutting on it would lose
+        # real sentences.
+        result = strip("first thought\n--\nstill the letter\n", False)
+        self.assertIn("still the letter", result.body)
 
     def test_trimmed_ignores_trailing_whitespace_only_changes(self):
         # talon normalises a trailing newline even with nothing to quote-

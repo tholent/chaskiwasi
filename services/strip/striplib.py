@@ -71,6 +71,32 @@ def _is_soft_break(line: str) -> bool:
     return line.endswith(" ") and line != "-- "
 
 
+SIGNATURE_DELIMITER = "-- "
+
+
+def cut_at_signature(text: str) -> str:
+    """Cuts from the first line that is exactly "-- " onward.
+
+    talon.quotations strips quoted reply chains but does *not* touch signature
+    delimiters — talon's signature support lives in a separate, ML-backed
+    module that §11.1 deliberately does not pull in. Without this step the
+    live service would leave signatures that the in-process Go fallback
+    (§5.3) removes, so a letter would render differently depending on whether
+    a Python container happened to be up. Same input, same output, degraded
+    or not, is what makes §5.2's determinism claim true in practice.
+
+    "-- " alone on a line is a real standard delimiter (design-spec §3.4
+    rule 2), which is why it is the one signature rule worth applying
+    deterministically. A bare "--" is not matched: it is ordinary text often
+    enough that cutting on it would lose real sentences.
+    """
+    lines = text.split("\n")
+    for i, line in enumerate(lines):
+        if line == SIGNATURE_DELIMITER:
+            return "\n".join(lines[:i])
+    return text
+
+
 def strip(text: str, format_flowed: bool) -> StripResult:
     """Runs the full pipeline: optional flowed-unwrap, then talon quote
     stripping. removed_bytes is measured in UTF-8 bytes, matching how the Go
@@ -80,6 +106,7 @@ def strip(text: str, format_flowed: bool) -> StripResult:
     stripped = quotations.extract_from_plain(working)
     if stripped is None:
         stripped = working
+    stripped = cut_at_signature(stripped)
 
     # talon unconditionally normalises trailing whitespace/newlines even
     # when there was no quoted tail to find — that's not what `trimmed`
