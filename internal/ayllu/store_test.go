@@ -3,8 +3,11 @@ package ayllu
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 
@@ -568,5 +571,132 @@ func TestF6_DeviceViewCarriesTheSystemContact(t *testing.T) {
 	}
 	if strings.Contains(string(blob), "@") {
 		t.Errorf("device view leaked an address (I-2): %s", blob)
+	}
+}
+
+// TestContactIDsAreOpaque pins the three properties an id must have. A
+// sequential scheme passes none of them, and nothing else in the suite would
+// notice a regression to one: every other test looks up the id it was handed.
+func TestContactIDsAreOpaque(t *testing.T) {
+	s := openTestStore(t, 24)
+
+	const n = 12
+	ids := make([]string, 0, n)
+	for i := range n {
+		ev := mustAdd(t, s, "dad", fmt.Sprintf("Person %d", i), fmt.Sprintf("p%d@example.com", i))
+		ids = append(ids, ev.ContactID)
+	}
+
+	// 1. Distinct.
+	seen := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		if seen[id] {
+			t.Fatalf("duplicate contact id %q", id)
+		}
+		seen[id] = true
+	}
+
+	// 2. No ordinal, and no count. An id must not contain the position it was
+	// added at, which is what made c_07 announce "at least seven contacts".
+	for i, id := range ids {
+		body, ok := strings.CutPrefix(id, "c_")
+		if !ok {
+			t.Fatalf("id %q lacks the c_ prefix", id)
+		}
+		if len(body) != idBodyLen {
+			t.Errorf("id %q body is %d symbols, want %d", id, len(body), idBodyLen)
+		}
+		for _, r := range body {
+			if !strings.ContainsRune(idAlphabet, r) {
+				t.Errorf("id %q contains %q, which is outside the alphabet", id, r)
+			}
+		}
+		for _, ordinal := range []string{
+			fmt.Sprint(i), fmt.Sprint(i + 1), fmt.Sprintf("%02d", i+1),
+		} {
+			if body == ordinal || strings.HasPrefix(body, ordinal+"0") {
+				t.Errorf("id %q looks like it encodes position %d", id, i)
+			}
+		}
+	}
+
+	// 3. Sort order carries no information about insertion order. With 12 ids
+	// the chance of a random draw landing in insertion order is 1/12!, so a
+	// match here means the ids are sequential, not that we got unlucky.
+	sorted := append([]string(nil), ids...)
+	sort.Strings(sorted)
+	if slices.Equal(sorted, ids) {
+		t.Error("sorted ids match insertion order — the ids still encode when each contact was added")
+	}
+
+	// ...but sorting is still a stable total order, which resolution and the
+	// device view rely on for a deterministic tie-break.
+	again := append([]string(nil), ids...)
+	sort.Strings(again)
+	if !slices.Equal(again, sorted) {
+		t.Error("sorting is not stable across calls")
+	}
+}
+
+// TestContactIDsNeverCollideWithTheSystemContact: c_sys is reserved and
+// resolves synthetically, so a real contact drawing that id would shadow every
+// notice letter's sender.
+func TestContactIDsNeverCollideWithTheSystemContact(t *testing.T) {
+	for range 2000 {
+		id, err := randomContactID()
+		if err != nil {
+			t.Fatalf("randomContactID: %v", err)
+		}
+		if id == protocol.SysContactID {
+			t.Fatalf("minted the reserved system contact id %q", id)
+		}
+	}
+}
+
+// TestExistingSequentialIDsStillWork: a contact id is the permanent rendering
+// key for every letter that person ever sent (§7.1), so ids already issued are
+// never reassigned — an ayllu.toml written before this change must keep
+// resolving exactly as it did.
+func TestExistingSequentialIDsStillWork(t *testing.T) {
+	dir := t.TempDir()
+	legacy := `version = 3
+
+[[contacts]]
+id = "c_01"
+name = "Rosa"
+address = "rosa@example.com"
+active = true
+
+[[contacts]]
+id = "c_02"
+name = "Theo"
+address = "theo@example.com"
+active = false
+`
+	if err := os.WriteFile(filepath.Join(dir, "ayllu.toml"), []byte(legacy), 0o600); err != nil {
+		t.Fatalf("seed legacy file: %v", err)
+	}
+	s, err := Open(dir, 24)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	c, ok := s.Resolve("rosa@example.com")
+	if !ok || c.ID != "c_01" {
+		t.Fatalf("legacy contact did not resolve to its original id: %+v", c)
+	}
+	if tomb, ok := s.ByID("c_02"); !ok || tomb.Active {
+		t.Fatalf("legacy tombstone did not survive: %+v", tomb)
+	}
+
+	// A new contact added alongside them gets the opaque form.
+	ev := mustAdd(t, s, "dad", "New", "new@example.com")
+	if !strings.HasPrefix(ev.ContactID, "c_") || len(ev.ContactID) != 2+idBodyLen {
+		t.Errorf("new contact id %q is not the opaque form", ev.ContactID)
+	}
+
+	// And the legacy ids are still there, unrewritten.
+	if _, ok := s.ByID("c_01"); !ok {
+		t.Error("adding a contact rewrote an existing id")
 	}
 }

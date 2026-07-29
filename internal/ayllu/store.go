@@ -3,13 +3,13 @@ package ayllu
 import (
 	"bufio"
 	"bytes"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -28,10 +28,10 @@ import (
 // two must agree, or filing would mis-file Wasi's own notices as strangers.
 const SystemAddress = "system@wasi.internal"
 
-// SystemName is the display name behind protocol.SysContactID. It is not
-// wired into any device-visible list yet (see FileStore's doc comment on
-// List/DeviceView) — a later wave decides how a notice letter's sender is
-// actually shown.
+// SystemName is the display name behind protocol.SysContactID, and the name a
+// child sees on every announcement the system makes about their contact list.
+// It is deliberately a plain English word that survives cold reading
+// (design-spec §0) and is none of the internal vocabulary (§0.1).
 const SystemName = "Home"
 
 // fileHeader is prepended to every ayllu.toml write. Comments and formatting
@@ -59,9 +59,9 @@ type fileFormat struct {
 // synthetic identity (§7.4) that ByID, Resolve, and ResolveActive answer for
 // directly, so "cannot be written to" is true by construction rather than by
 // convention — there is no code path that stores a mutable row under that id.
-// One consequence, left for a later wave: c_sys does not appear in
-// List/DeviceView, so how a notice letter's sender name reaches the device is
-// not yet decided here.
+// It is absent from List (the guardian UI manages real contacts only) but
+// present in DeviceView, so the device can name the sender of a notice letter
+// — see DeviceView for why it ships as a tombstone.
 type FileStore struct {
 	tomlPath    string
 	logPath     string
@@ -473,18 +473,80 @@ func (s *FileStore) applyCosmeticLocked(m Mutation) (Contact, error) {
 // nextIDLocked finds the lowest unused "c_NN" id for a genuinely new
 // contact. Ids are never reused across a different address: tombstones keep
 // their slot forever, which is what makes the maxContacts cap meaningful.
+// idAlphabet is Crockford base32: the digits plus the lowercase letters, less
+// i, l, o and u — the four that misread as 1/0 or turn into words. Contact ids
+// are read out of log lines and typed into a `wasi contacts` invocation, so
+// unambiguous beats dense. Exactly 32 symbols, which is what keeps the
+// uniform-selection argument in randomContactID true.
+const idAlphabet = "0123456789abcdefghjkmnpqrstvwxyz"
+
+// idBodyLen is the number of random symbols after the "c_" prefix. Ten symbols
+// is 50 bits: with the 24-contact cap (A.3) the chance of ever drawing a
+// collision is vanishing, and nextIDLocked re-draws anyway.
+const idBodyLen = 10
+
+// nextIDLocked mints an opaque contact id.
+//
+// Ids used to be assigned sequentially (c_01, c_02, …), which made every id a
+// disclosure: an id seen in isolation revealed both when that person was added
+// relative to everyone else, and a lower bound on how many contacts exist —
+// c_07 says "at least seven". Contact ids travel further than the addresses
+// they stand in for. They are on the wire in every letter and every ayllu
+// block, they sit in flash on a device the design spec expects to be lost or
+// stolen (design-spec §5.6), and they appear in log lines. The ordering is
+// also the more sensitive half: "who was added most recently" and "who was
+// contact number one" are facts about a family, and the point of I-2 is that
+// the device carries names and nothing else about the shape of the list.
+//
+// Random ids still sort lexicographically — a total order over a set of
+// strings always exists — so the deterministic tie-break resolution and
+// DeviceView rely on is unchanged. The order simply no longer means anything,
+// which is the point.
+//
+// Existing sequential ids are never rewritten. A contact id is the permanent
+// rendering key for every letter that person ever sent (§7.1); reissuing one
+// would unresolve their history exactly the way F-1 describes. Old ids keep
+// working, and only new contacts get the new form.
 func (s *FileStore) nextIDLocked() (string, error) {
-	width := len(strconv.Itoa(s.maxContacts))
-	if width < 2 {
-		width = 2
+	if len(s.contacts) >= s.maxContacts {
+		return "", ErrMaxContacts
 	}
-	for n := 1; n <= s.maxContacts; n++ {
-		id := fmt.Sprintf("c_%0*d", width, n)
-		if _, used := s.contacts[id]; !used {
-			return id, nil
+	// Redraw on collision rather than probing adjacent values: a probe would
+	// reintroduce a relationship between one id and another.
+	for attempt := 0; attempt < 32; attempt++ {
+		id, err := randomContactID()
+		if err != nil {
+			return "", err
 		}
+		if id == protocol.SysContactID {
+			continue
+		}
+		if _, used := s.contacts[id]; used {
+			continue
+		}
+		return id, nil
 	}
-	return "", ErrMaxContacts
+	return "", errors.New("ayllu: could not mint a unique contact id")
+}
+
+// randomContactID draws idBodyLen symbols uniformly from idAlphabet.
+//
+// The modulo is unbiased because 256 is an exact multiple of 32: every byte
+// value maps to exactly eight symbols. If the alphabet ever stops being a
+// power of two this needs rejection sampling, or the low symbols become
+// slightly likelier — a small bias, but the whole purpose of these ids is that
+// they carry no structure.
+func randomContactID() (string, error) {
+	b := make([]byte, idBodyLen)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("ayllu: generating a contact id: %w", err)
+	}
+	out := make([]byte, 0, 2+idBodyLen)
+	out = append(out, 'c', '_')
+	for _, v := range b {
+		out = append(out, idAlphabet[int(v)%len(idAlphabet)])
+	}
+	return string(out), nil
 }
 
 func (s *FileStore) sortedIDsLocked() []string {
