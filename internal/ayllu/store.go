@@ -28,11 +28,22 @@ import (
 // two must agree, or filing would mis-file Wasi's own notices as strangers.
 const SystemAddress = "system@wasi.internal"
 
-// SystemName is the display name behind protocol.SysContactID, and the name a
-// child sees on every announcement the system makes about their contact list.
-// It is deliberately a plain English word that survives cold reading
-// (design-spec §0) and is none of the internal vocabulary (§0.1).
-const SystemName = "Home"
+// SystemName is the display name behind protocol.SysContactID: the sender a
+// child sees on every announcement about their contact list, and — since
+// notice letters graduate (§7.4) — the sender on those records for as long as
+// the archive lasts.
+//
+// "Wasi" and not "Home". This device exists for a young person who moves
+// often, and "home" is a loaded word for a reader who may not have a settled
+// one, or who has more than one, or who is being asked to call somewhere home
+// that they don't. A letter arriving "from Home" quietly asserts something
+// about the reader's life; "from Wasi" asserts nothing.
+//
+// It is also legal here in a way the internal vocabulary is not: Wasi is one
+// of the three public names of design-spec §0, chosen to survive cold reading
+// (WAH-see), not one of the §0.1 identifiers — pututu, ayllu, kipu — that must
+// never reach a user-facing string (test V-14).
+const SystemName = "Wasi"
 
 // fileHeader is prepended to every ayllu.toml write. Comments and formatting
 // are not preserved across a save (§3), so the file says so in its own words

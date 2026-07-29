@@ -700,3 +700,30 @@ active = false
 		t.Error("adding a contact rewrote an existing id")
 	}
 }
+
+// TestSystemNameIsSafeForAChildToRead guards the one string a child sees on
+// every announcement about their contact list — and, because notice letters
+// graduate (§7.4), keeps seeing for as long as the archive lasts.
+//
+// It is pinned by test rather than left to judgement because it is cheap to
+// change today and expensive later: an archive that changes sender name
+// halfway through reads as two different correspondents.
+func TestSystemNameIsSafeForAChildToRead(t *testing.T) {
+	if SystemName == "" {
+		t.Fatal("the system contact has no display name; notice letters would name no sender")
+	}
+	// §0.1's hard boundary: the internal identifiers never reach a
+	// user-facing string, and this one is as user-facing as they get (V-14).
+	for _, banned := range []string{"pututu", "ayllu", "kipu"} {
+		if strings.Contains(strings.ToLower(SystemName), banned) {
+			t.Errorf("system contact display name %q contains the internal word %q", SystemName, banned)
+		}
+	}
+	// design-spec §0: user-facing names survive cold reading — no digraphs
+	// with no correct answer, no apostrophes, no punctuation to puzzle over.
+	for _, r := range SystemName {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')) {
+			t.Errorf("system contact display name %q contains %q; keep it plainly readable", SystemName, r)
+		}
+	}
+}

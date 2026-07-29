@@ -256,8 +256,21 @@ semantics gets both halves right with no new wire field and no firmware special
 case. Verified end to end: the notice renders as "Home" and does not appear in
 the compose picker.
 
-**The display name is still worth your confirmation** — it is the one string a
-child sees attached to every announcement the system makes.
+The display name is **"Wasi"**, decided rather than defaulted. "Home" was the
+first choice and is the wrong one: this device exists for a young person who
+moves often, and "home" is a loaded word for a reader who may not have a
+settled one, or has more than one, or is being asked to call somewhere home
+that they don't. A letter arriving "from Home" quietly asserts something about
+the reader's life. "Wasi" asserts nothing, and is legal where the internal
+vocabulary is not — it is one of design-spec §0's three public names, chosen to
+survive cold reading, not one of §0.1's greppable identifiers.
+
+The name appears in exactly two places a person sees: the sender on the
+device, and the `From` display-name on notice letters in the mailbox — which
+graduate, so it is the sender on those records for as long as the archive
+lasts. That permanence is why it is pinned by a test rather than left to
+judgement: an archive whose sender name changes halfway through reads as two
+different correspondents.
 
 **F-7 · §8 has no release flow for a sender who is already an active contact.
 RESOLVED — `filing.ReleaseActive`.**
