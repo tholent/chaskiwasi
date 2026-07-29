@@ -1,0 +1,31 @@
+{{define "content"}}
+<p class="muted">
+  Every change to the contact list, with who made it and the addresses involved. The letter that
+  announces a change to the device never carries an address — this page is where they live.
+</p>
+
+{{with .Err}}<p class="flash flash-error" role="alert">{{.}}</p>{{end}}
+{{if .Truncated}}<p class="muted small">Showing the most recent {{.Limit}} changes.</p>{{end}}
+
+{{if .Changes}}
+<table>
+  <thead><tr><th>When</th><th>Change</th><th>Who it concerns</th><th>Address</th><th>Made by</th></tr></thead>
+  <tbody>
+  {{range .Changes}}
+    <tr>
+      <td>{{datetime .At}}</td>
+      <td>{{.Action}}</td>
+      <td>{{.Name}} <span class="muted small">{{.ContactID}}</span></td>
+      <td>
+        {{if .OldAddress}}<code>{{.OldAddress}}</code> &rarr; {{end}}
+        {{if .NewAddress}}<code>{{.NewAddress}}</code>{{end}}
+      </td>
+      <td>{{.Actor}}</td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}
+  {{if not .Err}}<p class="muted">No changes recorded yet.</p>{{end}}
+{{end}}
+{{end}}

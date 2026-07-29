@@ -1,0 +1,6 @@
+{{define "banner.html"}}
+{{/* §12.3: persistent on every page while the device certificate is inside
+     its warning window. Not a letter to the inbox — certificate work is
+     operator noise, not family record. */}}
+{{with .CertWarning}}<p class="banner" role="alert">{{.}}</p>{{end}}
+{{end}}

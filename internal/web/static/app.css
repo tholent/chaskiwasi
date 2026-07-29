@@ -1,0 +1,172 @@
+/* Guardian UI styles. Hand-written, no build step (§9.1): what is in this file
+   is what the browser gets. Light and dark both, because a guardian checking
+   the device at night should not be flashbanged. */
+
+:root {
+  --bg: #fbfaf7;
+  --surface: #ffffff;
+  --ink: #1d1c1a;
+  --muted: #5f5c56;
+  --line: #ddd8cf;
+  --accent: #7a4b2a;
+  --ok-bg: #e6f2e6;
+  --ok-ink: #1f4620;
+  --warn-bg: #fbf0d8;
+  --warn-ink: #6a4b06;
+  --err-bg: #f8e3e0;
+  --err-ink: #7a231a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17161a;
+    --surface: #201f24;
+    --ink: #ece9e3;
+    --muted: #a29d94;
+    --line: #35333a;
+    --accent: #d8a179;
+    --ok-bg: #1d3320;
+    --ok-ink: #bfe0c0;
+    --warn-bg: #3a2f16;
+    --warn-ink: #f0d79a;
+    --err-bg: #3a1f1c;
+    --err-ink: #f2c1ba;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+main {
+  max-width: 62rem;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 4rem;
+}
+
+h1 { font-size: 1.5rem; margin: 0 0 1rem; }
+h2 { font-size: 1.05rem; margin: 0 0 .6rem; }
+
+code, .path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .9em; }
+
+/* Navigation */
+
+nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .75rem 1.25rem;
+  padding: .7rem 1rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+nav .brand { font-weight: 700; text-decoration: none; color: var(--accent); }
+nav ul { display: flex; flex-wrap: wrap; gap: 1rem; list-style: none; margin: 0; padding: 0; }
+nav a { color: var(--ink); text-decoration: none; }
+nav a:hover { text-decoration: underline; }
+nav a[aria-current="page"] { font-weight: 700; color: var(--accent); }
+nav .signout { margin-left: auto; display: flex; align-items: center; gap: .6rem; }
+nav .who { color: var(--muted); font-size: .9rem; }
+
+/* Blocks */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 1rem;
+  margin: 0 0 1.25rem;
+}
+.card.note { border-left: 4px solid var(--accent); }
+.card.narrow, .narrow { max-width: 26rem; }
+
+.grid { display: grid; gap: 1.25rem; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); }
+
+.banner {
+  margin: 0 0 1rem;
+  padding: .7rem .9rem;
+  border-radius: 6px;
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+  border: 1px solid currentColor;
+}
+
+.flash { margin: 0 0 1rem; padding: .6rem .8rem; border-radius: 6px; }
+.flash-ok { background: var(--ok-bg); color: var(--ok-ink); }
+.flash-warn { background: var(--warn-bg); color: var(--warn-ink); }
+.flash-error { background: var(--err-bg); color: var(--err-ink); }
+
+.muted { color: var(--muted); }
+.small { font-size: .85rem; }
+.count { margin-top: 0; }
+.figure { font-size: 1.6rem; margin: .2rem 0; }
+
+/* Facts and tables */
+
+dl.facts { display: grid; grid-template-columns: max-content 1fr; gap: .35rem 1rem; margin: 0; }
+dl.facts dt { color: var(--muted); }
+dl.facts dd { margin: 0; }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: .5rem .4rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; font-size: .85rem; }
+tr.inactive td { opacity: .65; }
+
+/* Forms */
+
+label { display: block; font-size: .85rem; color: var(--muted); margin-top: .6rem; }
+input {
+  width: 100%;
+  padding: .45rem .55rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+}
+button {
+  margin-top: .7rem;
+  padding: .45rem .9rem;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--surface);
+  font: inherit;
+  cursor: pointer;
+}
+button:hover { filter: brightness(1.08); }
+button.link {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+form.row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .75rem; }
+form.row > div { flex: 1 1 14rem; }
+form.inline { display: flex; gap: .4rem; align-items: center; }
+form.inline input { min-width: 12rem; }
+form.inline button { margin-top: 0; }
+td.actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+td.actions form { margin: 0; }
+td.actions button { margin-top: 0; }
+
+/* Held review */
+
+ul.held { list-style: none; margin: 0; padding: 0; }
+ul.held li {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: .9rem 1rem;
+  margin-bottom: 1rem;
+}
+.held-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem; }
+.held-subject { margin: .35rem 0 .5rem; font-weight: 600; }

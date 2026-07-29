@@ -141,3 +141,46 @@ func (s *Service) arrivalPassAfterReleaseLocked(ctx context.Context, releasedUID
 	}
 	return nil
 }
+
+// ReleaseActive releases a Held message whose sender ALREADY resolves to an
+// active contact. It moves the message and rings the doorbell; it mutates the
+// contact list not at all, and therefore announces nothing.
+//
+// §8 names only two release flows — stranger and deactivated — but a third
+// state is reachable and ordinary: a guardian adds a stranger from the contacts
+// page, and that person's earlier letter is still sitting in Held with a sender
+// that now resolves as active. Routing it through ReleaseDeactivated would
+// satisfy the mechanics and produce a *false* notice letter — "Rosa was added
+// back to your list" when nothing about Rosa changed. A notice that describes a
+// change which did not happen is worse than a missing one: I-4 exists so the
+// child and the guardians can trust that the list only changes when a letter
+// says so, and a spurious letter corrupts exactly that record.
+//
+// The §8 precondition still holds and is still checked: the sender must resolve
+// to an active contact. Here it simply already does, so there is nothing to
+// mutate on the way.
+func (s *Service) ReleaseActive(ctx context.Context, uid uint32) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	raw, err := s.findInHeldLocked(ctx, uid)
+	if err != nil {
+		return err
+	}
+	h := parseHeaders(raw.Data)
+	if !h.fromOK {
+		return fmt.Errorf("filing: release uid %d: no parseable sender address", uid)
+	}
+	resolved, ok := s.ayllu.ResolveActive(h.from)
+	if !ok {
+		return fmt.Errorf("filing: release uid %d: sender does not resolve to an active contact", uid)
+	}
+
+	if err := s.mailbox.Move(ctx, s.heldFolder, uid, inboxFolder); err != nil {
+		return fmt.Errorf("filing: release uid %d: moving to INBOX: %w", uid, err)
+	}
+	s.log.Info("filing: released message from an already-active contact",
+		"uid", uid, "contact_id", resolved.ID, "letter_id", h.letterID)
+
+	return s.arrivalPassAfterReleaseLocked(ctx, uid)
+}

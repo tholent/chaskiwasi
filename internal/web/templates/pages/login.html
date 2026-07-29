@@ -1,0 +1,13 @@
+{{define "content"}}
+<form method="post" action="/login" class="card narrow">
+  {{with .Error}}<p class="flash flash-error" role="alert">{{.}}</p>{{end}}
+  <label for="guardian">Name</label>
+  <input id="guardian" name="guardian" autocomplete="username" autocapitalize="none"
+         spellcheck="false" required autofocus>
+
+  <label for="password">Password</label>
+  <input id="password" name="password" type="password" autocomplete="current-password" required>
+
+  <button type="submit">Sign in</button>
+</form>
+{{end}}

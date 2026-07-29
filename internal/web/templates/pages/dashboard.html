@@ -1,0 +1,47 @@
+{{define "content"}}
+<div class="grid">
+  <section class="card">
+    <h2>Device</h2>
+    {{/* htmx keeps this panel current without reloading the page. */}}
+    <div id="device-status" hx-get="/status/device" hx-trigger="every 60s" hx-swap="innerHTML">
+      {{template "device_status.html" .Device}}
+    </div>
+  </section>
+
+  {{if .Balance.Show}}
+  <section class="card">
+    <h2>Text-message credit</h2>
+    {{if .Balance.Err}}
+      <p class="muted">{{.Balance.Err}}</p>
+    {{else}}
+      <p class="figure">{{.Balance.String}}</p>
+      <p class="muted">This pays for the alerts that wake the device when a letter arrives.</p>
+    {{end}}
+  </section>
+  {{end}}
+</div>
+
+<section class="card">
+  <h2>Recent deliveries</h2>
+  <p class="muted">
+    Letters {{with .OwnerName}}{{.}}{{else}}the device{{end}} has sent, by their reference and the time they were handled.
+    What a letter says is never recorded here or anywhere else on this server.
+  </p>
+  {{if .Deliveries}}
+  <table>
+    <thead><tr><th>Reference</th><th>Outcome</th><th>When</th></tr></thead>
+    <tbody>
+      {{range .Deliveries}}
+      <tr>
+        <td><code>{{.ID}}</code></td>
+        <td>{{.Status}}</td>
+        <td>{{datetime .At}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="muted">Nothing sent yet.</p>
+  {{end}}
+</section>
+{{end}}

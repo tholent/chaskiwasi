@@ -1,0 +1,29 @@
+{{define "content"}}
+<section class="card note">
+  <h2>These settings are read-only here</h2>
+  <p>
+    They live in a file you own, and this server only reads it:
+  </p>
+  <p><code class="path">{{.ConfigPath}}</code></p>
+  <p>
+    Edit that file and the change is picked up without a restart. Nothing on this page can write to
+    it — two things writing one file is precisely the mess this split avoids, so the boundary is
+    shown rather than hidden.
+  </p>
+</section>
+
+{{range .Groups}}
+<section class="card">
+  <h2>{{.Title}}</h2>
+  <dl class="facts">
+    {{range .Rows}}
+      <dt>{{.Label}}</dt>
+      <dd>
+        {{if .Value}}{{.Value}}{{else}}<span class="muted">not set</span>{{end}}
+        {{with .Note}}<div class="muted small">{{.}}</div>{{end}}
+      </dd>
+    {{end}}
+  </dl>
+</section>
+{{end}}
+{{end}}

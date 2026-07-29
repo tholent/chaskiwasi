@@ -1,0 +1,67 @@
+{{define "content"}}
+<section class="card">
+  <h2>Accounts</h2>
+  <table>
+    <thead><tr><th>Name</th><th>Created</th><th>Password last changed</th></tr></thead>
+    <tbody>
+      {{range .Guardians}}
+      <tr>
+        <td>{{.Name}}{{if .IsYou}} <span class="muted small">(you)</span>{{end}}</td>
+        <td>{{date .CreatedAt}}</td>
+        <td>{{date .PasswordChangedAt}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Change your password</h2>
+  <form method="post" action="/account/password" class="narrow">
+    <input type="hidden" name="csrf_token" value="{{.CSRF}}">
+
+    <label for="current">Current password</label>
+    <input id="current" name="current_password" type="password" autocomplete="current-password" required>
+
+    <label for="new">New password</label>
+    <input id="new" name="new_password" type="password" autocomplete="new-password"
+           minlength="{{.MinPasswordLen}}" required>
+
+    <label for="confirm">New password again</label>
+    <input id="confirm" name="confirm_password" type="password" autocomplete="new-password"
+           minlength="{{.MinPasswordLen}}" required>
+
+    <button type="submit">Change password</button>
+  </form>
+  <p class="muted small">
+    At least {{.MinPasswordLen}} characters. A long phrase beats a short puzzle.
+    Changing your password signs out every other browser signed in as you — immediately, everywhere.
+    A lock change that leaves the old keys working is not a lock change.
+  </p>
+</section>
+
+<section class="card">
+  <h2>Add a guardian</h2>
+  <form method="post" action="/account/add" class="narrow">
+    <input type="hidden" name="csrf_token" value="{{.CSRF}}">
+
+    <label for="new-guardian">Name</label>
+    <input id="new-guardian" name="guardian" autocapitalize="none" spellcheck="false"
+           pattern="[A-Za-z0-9._\-]{1,32}" required>
+
+    <label for="new-password">Password</label>
+    <input id="new-password" name="password" type="password" autocomplete="new-password"
+           minlength="{{.MinPasswordLen}}" required>
+
+    <label for="new-password-confirm">Password again</label>
+    <input id="new-password-confirm" name="confirm_password" type="password" autocomplete="new-password"
+           minlength="{{.MinPasswordLen}}" required>
+
+    <button type="submit">Create account</button>
+  </form>
+  <p class="muted small">
+    Letters, digits, dots, dashes and underscores. Nobody can change anyone else's password from
+    here; a forgotten one is reset from a shell on the machine itself.
+  </p>
+</section>
+{{end}}

@@ -11,8 +11,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tholent/chaskiwasi/internal/ayllu"
 	"github.com/tholent/chaskiwasi/internal/config"
+	"github.com/tholent/chaskiwasi/internal/guardians"
 	"github.com/tholent/chaskiwasi/internal/mailbox"
+	"github.com/tholent/chaskiwasi/internal/web"
 )
 
 // stubMailbox answers only what the ops endpoints ask of a mailbox (§14).
@@ -62,6 +65,34 @@ func testWatcher(t *testing.T) *config.Watcher {
 	return w
 }
 
+// testUI builds the real guardian UI over throwaway state, so the mux tests
+// exercise the actual mount rather than a stand-in that happens to 404.
+func testUI(t *testing.T) http.Handler {
+	t.Helper()
+	dir := t.TempDir()
+
+	guardianStore, err := guardians.Open(dir)
+	if err != nil {
+		t.Fatalf("guardians.Open: %v", err)
+	}
+	aylluStore, err := ayllu.Open(dir, config.DefaultMaxContacts)
+	if err != nil {
+		t.Fatalf("ayllu.Open: %v", err)
+	}
+	ui, err := web.New(web.Config{
+		Guardians: guardianStore,
+		Ayllu:     aylluStore,
+		Watcher:   testWatcher(t),
+		DataDir:   dir,
+		CookieKey: []byte("a key that only this test uses"),
+		Logger:    slog.New(slog.NewTextHandler(os.Stderr, nil)),
+	})
+	if err != nil {
+		t.Fatalf("web.New: %v", err)
+	}
+	return ui.Handler()
+}
+
 func TestGuardianMux_HealthzAndReadyz(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -78,7 +109,7 @@ func TestGuardianMux_HealthzAndReadyz(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			mux := guardianMux(testWatcher(t), stubMailbox{err: tc.mailboxErr}, logger)
+			mux := guardianMux(testWatcher(t), stubMailbox{err: tc.mailboxErr}, testUI(t), logger)
 
 			w := httptest.NewRecorder()
 			mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, tc.path, nil))
@@ -91,12 +122,40 @@ func TestGuardianMux_HealthzAndReadyz(t *testing.T) {
 
 func TestGuardianMux_ServesNoDeviceEndpoint(t *testing.T) {
 	// The two listeners share nothing but the process (§12.1): /sync exists on
-	// the device listener alone, behind the private-CA leaf.
-	mux := guardianMux(testWatcher(t), stubMailbox{}, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	// the device listener alone, behind the private-CA leaf. The guardian UI
+	// is mounted at "/" and must not answer for it either.
+	mux := guardianMux(testWatcher(t), stubMailbox{}, testUI(t), slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/sync", nil))
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("/sync on the guardian listener = %d, want 404", w.Code)
+	}
+}
+
+func TestGuardianMux_MountsTheUIWithoutShadowingOps(t *testing.T) {
+	// The UI is registered at "/", which must not capture the two ops
+	// endpoints (§14) and must still authenticate everything of its own.
+	mux := guardianMux(testWatcher(t), stubMailbox{}, testUI(t), slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
+	tests := []struct {
+		path       string
+		wantStatus int
+		wantHeader string
+	}{
+		{"/healthz", http.StatusOK, ""},
+		{"/", http.StatusSeeOther, "/login?m=signed-out"},
+		{"/contacts", http.StatusSeeOther, "/login?m=signed-out"},
+		{"/login", http.StatusOK, ""},
+	}
+	for _, tc := range tests {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, tc.path, nil))
+		if w.Code != tc.wantStatus {
+			t.Errorf("GET %s = %d, want %d", tc.path, w.Code, tc.wantStatus)
+		}
+		if tc.wantHeader != "" && w.Header().Get("Location") != tc.wantHeader {
+			t.Errorf("GET %s redirected to %q, want %q", tc.path, w.Header().Get("Location"), tc.wantHeader)
+		}
 	}
 }
 

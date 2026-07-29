@@ -216,6 +216,82 @@ never add threading headers or a `Re:` prefix**, and V-8 tests that, not the
 absence of the substring. The e2e implementation of V-8 must be written the same
 way or it will fail on a legitimate letter.
 
+**F-5 · §7.6's ordering cannot make I-4 true on its own. RESOLVED — startup
+reconciliation against the change log.**
+§7.6 specifies: write `ayllu.toml` → append the change-log line → add to
+`pending_notices` → APPEND the notice → remove from `pending_notices`. There is
+no transaction, so a crash between the ayllu write and the `pending_notices`
+write loses the notice **entirely** — the contact list changed and nothing ever
+announced it. That is precisely the I-4 failure ("neither party can alter the
+list behind the other's back"), and it survives any amount of care at the call
+site: the window is small but never zero, and the package split makes it two
+calls rather than one.
+
+`pending_notices` is a fast path, not the durable record. The durable record is
+`ayllu-log.jsonl`, which is append-only and written *before* the gap. The fix is
+a startup reconciliation: derive each notice's `Message-ID` deterministically
+from the event (action + contact id + version + timestamp) rather than randomly,
+then at startup compare recent change-log lines against notices present in INBOX
+and append any that are missing. That closes the window completely and makes
+`pending_notices` a pure optimisation. Implemented: `notice.Reconcile`, called
+at startup after `Flush`, over `ayllu.ReadLog` with a 90-day window. Covered by
+`TestF5_ChangeWithNoPendingRecordIsAnnouncedLate` and a companion test proving
+an already-announced change is not re-announced — without which every restart
+would spam the child's inbox with old news.
+
+**F-6 · `c_sys` had no device-visible identity. RESOLVED — ships as a tombstone.**
+Notice letters arrive at the device with `contact_id: "c_sys"`, but `c_sys` is
+deliberately excluded from the ayllu payload — it is a resolution-only identity,
+not a guardian-manageable row. So the device receives letters from a contact id
+it has never heard of and cannot render a sender name for. Two Confirmed live: a notice letter reached the simulator
+with a `contact_id` no entry in its contact list matched.
+
+Resolved with no wire change. `DeviceView` now includes a synthetic `c_sys`
+entry named "Home" (already defined as `ayllu.SystemName`; it satisfies §0's
+pronounceability rule and the §0.1 vocabulary boundary) with `active: false`.
+That is not a fiction: the device's rule for an inactive contact — render the
+name on letters they sent, hide them from the compose picker — is exactly what
+§7.4 requires of a contact that cannot be written to. Reusing the tombstone
+semantics gets both halves right with no new wire field and no firmware special
+case. Verified end to end: the notice renders as "Home" and does not appear in
+the compose picker.
+
+**The display name is still worth your confirmation** — it is the one string a
+child sees attached to every announcement the system makes.
+
+**F-7 · §8 has no release flow for a sender who is already an active contact.
+RESOLVED — `filing.ReleaseActive`.**
+Found by 3B while building the Held UI, and reachable in ordinary use: a
+guardian adds a stranger on the contacts page, and that person's earlier letter
+is still in Held with a sender that now resolves as active. §8 names only
+stranger and deactivated, so the message could only be routed through
+"reactivate, then release" — which works mechanically and produces a **false
+notice letter**: "Rosa was added back to your list" for a change that never
+happened. A notice describing a non-change is worse than a missing one, because
+I-4's whole promise is that the list changed exactly when a letter says it did.
+
+`filing.ReleaseActive` moves the message and rings the doorbell while mutating
+nothing, and returns no event, so nothing is announced. The §8 precondition is
+still checked — the sender must resolve to an active contact; here it simply
+already does. Covered by `TestF7_ReleasingAnAlreadyActiveSenderAnnouncesNothing`,
+which also asserts the letter still arrives: "announce nothing" must not become
+"do nothing".
+
+**F-8 · `wasi useradd` on a running server created an account nobody could use.
+RESOLVED — the guardian store re-reads on change.**
+Found by driving the real UI, not by any unit test. `guardians.FileStore`
+parsed `guardians.toml` once at `Open`, but `wasi useradd` is a **separate
+process** writing that same file (§9.2, §14). So the account existed on disk,
+the CLI printed "sign in now", and the server answered "incorrect username or
+password" until it was restarted — with nothing anywhere saying a restart was
+needed. The second face of the same bug was worse: the running server's next
+write would persist its stale table and **delete** the account the CLI added.
+
+The store now re-reads when the file's mtime or size changes, before every read
+and every write, and re-stamps after its own writes. A malformed file keeps the
+last good table rather than locking every guardian out. Covered by two tests,
+one per face of the bug.
+
 ## 5. Risks tracked during the build
 
 - **maddy ≠ Fastmail.** No spam foldering, IDLE and MOVE semantics differ. V-16 injects the

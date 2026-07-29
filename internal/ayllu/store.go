@@ -1,6 +1,8 @@
 package ayllu
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -218,7 +220,20 @@ func (s *FileStore) DeviceView(requestVersion int) *protocol.Ayllu {
 	}
 
 	ids := s.sortedIDsLocked()
-	contacts := make([]protocol.AylluContact, 0, len(ids))
+	contacts := make([]protocol.AylluContact, 0, len(ids)+1)
+
+	// c_sys ships to the device so a notice letter has a sender the device can
+	// name. It is sent with Active false, which is not a fiction: the device's
+	// rule for an inactive contact is exactly the rule c_sys needs — render the
+	// name on letters they sent, hide them from the compose picker — and §7.4
+	// says c_sys cannot be written to. Reusing the tombstone semantics gets
+	// both halves right with no new wire field and no firmware special case.
+	contacts = append(contacts, protocol.AylluContact{
+		ID:     protocol.SysContactID,
+		Name:   SystemName,
+		Active: false,
+	})
+
 	for _, id := range ids {
 		c := s.contacts[id]
 		contacts = append(contacts, protocol.AylluContact{
@@ -550,4 +565,50 @@ func normalizeAddress(addr string) string {
 	}
 	local, domain := addr[:at], addr[at+1:]
 	return local + "@" + strings.ToLower(domain)
+}
+
+// ReadLog returns the change-log events at or after since, oldest first.
+//
+// ayllu-log.jsonl is append-only and is written *before* the notice path runs,
+// which makes it the durable record of what changed — `pending_notices` in
+// state.json is only a fast path. Startup reconciliation of announcements
+// against this log is what closes the crash window in which a change lands but
+// its notice never does, and I-4 ("nothing about the list changes silently")
+// is only literally true once that window is closed.
+//
+// Malformed lines are skipped rather than fatal: a torn final line from a
+// crash mid-append must not make the whole log unreadable, and losing the
+// ability to reconcile would be a strictly worse outcome than skipping the one
+// event that was already only half-written.
+func ReadLog(dir string, since time.Time) ([]Event, error) {
+	f, err := os.Open(filepath.Join(dir, "ayllu-log.jsonl"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("ayllu: opening change log: %w", err)
+	}
+	defer f.Close()
+
+	var events []Event
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 1<<20)
+	for sc.Scan() {
+		line := bytes.TrimSpace(sc.Bytes())
+		if len(line) == 0 {
+			continue
+		}
+		var e Event
+		if err := json.Unmarshal(line, &e); err != nil {
+			continue
+		}
+		if e.At.Before(since) {
+			continue
+		}
+		events = append(events, e)
+	}
+	if err := sc.Err(); err != nil {
+		return nil, fmt.Errorf("ayllu: reading change log: %w", err)
+	}
+	return events, nil
 }

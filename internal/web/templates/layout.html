@@ -1,0 +1,25 @@
+{{/*
+  The page shell. Every page template defines "content"; each page is parsed
+  into its own template set, which is what lets them all use that one name.
+
+  Guardian-facing English only: the internal identifiers for the contact list,
+  the doorbell, and the health log never appear in this directory (§9.1, V-14).
+*/}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} &middot; Chaski</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js" defer></script>
+</head>
+<body>
+{{template "nav.html" .}}
+<main>
+  {{template "banner.html" .}}
+  {{template "flash.html" .}}
+  <h1>{{.Title}}</h1>
+  {{template "content" .}}
+</main>
+</body>
+</html>

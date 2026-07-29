@@ -1,0 +1,59 @@
+{{define "held_list.html"}}
+{{with .Err}}<p class="flash flash-error" role="alert">{{.}}</p>{{end}}
+{{if .Messages}}
+<ul class="held">
+  {{range .Messages}}
+  <li>
+    <div class="held-head">
+      <code>{{.From}}</code>
+      <span class="muted">{{datetime .Received}}</span>
+    </div>
+    <div class="held-subject">{{if .Subject}}{{.Subject}}{{else}}<span class="muted">no subject</span>{{end}}</div>
+
+    {{if eq .Kind "stranger"}}
+      <p class="muted small">Not on the contact list. Delivering this letter means adding them.</p>
+      <form method="post" action="/held/release" class="row">
+        <input type="hidden" name="csrf_token" value="{{$.CSRF}}">
+        <input type="hidden" name="uid" value="{{.UID}}">
+        <div>
+          <label for="name-{{.UID}}">Name for this contact</label>
+          <input id="name-{{.UID}}" name="name" value="{{.ContactName}}" required maxlength="60">
+        </div>
+        <button type="submit">Add as contact, then deliver</button>
+      </form>
+
+    {{else if eq .Kind "deactivated"}}
+      <p class="muted small">
+        {{.ContactName}} was removed from the list. Delivering this letter means putting them back on it.
+      </p>
+      <form method="post" action="/held/release">
+        <input type="hidden" name="csrf_token" value="{{$.CSRF}}">
+        <input type="hidden" name="uid" value="{{.UID}}">
+        <button type="submit">Restore contact, then deliver</button>
+      </form>
+
+    {{else if eq .Kind "known"}}
+      <p class="muted small">
+        {{.ContactName}} is already on the list — this letter arrived before they were added.
+        Delivering it is recorded as restoring the contact, because there is exactly one way to
+        release a message and it announces itself.
+      </p>
+      <form method="post" action="/held/release">
+        <input type="hidden" name="csrf_token" value="{{$.CSRF}}">
+        <input type="hidden" name="uid" value="{{.UID}}">
+        <button type="submit">Deliver</button>
+      </form>
+
+    {{else}}
+      <p class="muted small">
+        The sender of this message cannot be read, so there is no one to add and nothing to
+        deliver it as. It stays here; it is not deleted.
+      </p>
+    {{end}}
+  </li>
+  {{end}}
+</ul>
+{{else}}
+  {{if not .Err}}<p class="muted">Nothing is waiting for review.</p>{{end}}
+{{end}}
+{{end}}

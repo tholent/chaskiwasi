@@ -1,0 +1,27 @@
+{{define "device_status.html"}}
+<dl class="facts">
+  <dt>Last check-in</dt>
+  <dd>{{ago .LastSync}}{{if not .LastSync.IsZero}} <span class="muted">({{datetime .LastSync}})</span>{{end}}</dd>
+
+  {{if .HaveBattery}}
+  <dt>Battery</dt>
+  <dd>{{.BatteryPct}}%</dd>
+  {{end}}
+
+  {{if .HaveSignal}}
+  <dt>Signal</dt>
+  <dd>{{.SignalWord}} <span class="muted">({{.SignalDBm}} dBm)</span></dd>
+  {{end}}
+
+  {{with .Network}}<dt>Network</dt><dd>{{.}}</dd>{{end}}
+  {{with .Firmware}}<dt>Software</dt><dd>{{.}}</dd>{{end}}
+
+  {{if .HaveHealth}}
+  <dt>Report from</dt>
+  <dd>{{datetime .HealthAt}}</dd>
+  {{end}}
+</dl>
+{{if not .HaveHealth}}
+<p class="muted">The device has not reported its condition yet.</p>
+{{end}}
+{{end}}

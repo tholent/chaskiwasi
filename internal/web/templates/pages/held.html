@@ -1,0 +1,25 @@
+{{define "content"}}
+<p class="muted">
+  Mail that did not come from anyone on the contact list waits here. Nothing bounces, nothing is
+  deleted, and nothing reaches the device until you decide. There is no time limit — messages sit
+  here until someone acts.
+</p>
+
+<section class="card note">
+  <h2>Delivering one letter without reopening the channel</h2>
+  <p>
+    Restore the contact, deliver the message, then remove the contact again. Three separate actions,
+    each one announced in the inbox and written to the change log.
+  </p>
+  <p>
+    There is deliberately no quiet one-off delivery. A letter appearing on the device with nobody
+    told how it got there is the thing this whole design refuses to do — including when the person
+    doing it is you.
+  </p>
+</section>
+
+{{/* Refreshed in place by htmx so a guardian watching this page sees new arrivals. */}}
+<div id="held-list" hx-get="/held/list" hx-trigger="every 60s" hx-swap="innerHTML">
+  {{template "held_list.html" .List}}
+</div>
+{{end}}

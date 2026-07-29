@@ -125,6 +125,11 @@ services:
       WASI_IMAP_PASSWORD: ${MADDY_TEST_PASSWORD:-devpassword123}
       WASI_COOKIE_SIGNING_KEY: ${WASI_COOKIE_SIGNING_KEY:-dev-cookie-signing-key-not-for-prod}
       WASI_SERVICE_TOKEN: ${WASI_SERVICE_TOKEN:-dev-shared-service-token}
+      # §10.2: the doorbell MAC key is necessarily separate from the device
+      # bearer token, since Wasi stores only a hash of that one and cannot MAC
+      # with it. Startup fails loudly if a carrier is configured without this,
+      # rather than running with a doorbell that silently never rings.
+      WASI_PUTUTU_KEY: ${WASI_PUTUTU_KEY:-dev-pututu-hmac-key-not-for-prod}
     ports:
       - "127.0.0.1:18443:8443" # device sync listener (§12.1)
       - "127.0.0.1:18444:8444" # guardian web UI (§12.1)

@@ -397,8 +397,10 @@ func TestDeviceView_NoAddresses(t *testing.T) {
 	if view == nil {
 		t.Fatalf("DeviceView(0) = nil, want a block (version changed from 0)")
 	}
-	if len(view.Contacts) != 3 {
-		t.Fatalf("DeviceView has %d contacts, want 3 (tombstones included)", len(view.Contacts))
+	// Three real contacts plus the synthetic c_sys entry (see
+	// TestF6_DeviceViewCarriesTheSystemContact).
+	if len(view.Contacts) != 4 {
+		t.Fatalf("DeviceView has %d contacts, want 4 (3 incl. tombstones, plus c_sys)", len(view.Contacts))
 	}
 
 	data, err := json.Marshal(view)
@@ -520,5 +522,51 @@ func TestReaddress_DeviceViewStillHidesAddresses(t *testing.T) {
 		if strings.Contains(string(blob), leak) {
 			t.Fatalf("device view leaked %q (I-2): %s", leak, blob)
 		}
+	}
+}
+
+// TestF6_DeviceViewCarriesTheSystemContact: notice letters arrive with
+// contact_id c_sys (§7.4), so without an entry for it the device receives
+// letters from an id it has never heard of and cannot name the sender of —
+// which is every announcement the system makes about the contact list.
+//
+// It ships Active false on purpose: the device's tombstone rule (render the
+// name, hide from the compose picker) is exactly what §7.4 requires of a
+// contact that cannot be written to.
+func TestF6_DeviceViewCarriesTheSystemContact(t *testing.T) {
+	s := openTestStore(t, 24)
+	mustAdd(t, s, "dad", "Rosa", "rosa@example.com")
+
+	view := s.DeviceView(0)
+	if view == nil {
+		t.Fatal("DeviceView returned nil after a change")
+	}
+
+	var sys *protocol.AylluContact
+	for i := range view.Contacts {
+		if view.Contacts[i].ID == protocol.SysContactID {
+			sys = &view.Contacts[i]
+		}
+	}
+	if sys == nil {
+		t.Fatal("the device view has no c_sys entry; notice letters would name no sender")
+	}
+	if sys.Name == "" {
+		t.Error("c_sys has no display name")
+	}
+	if sys.Active {
+		t.Error("c_sys is active in the device view, so it would appear in the compose picker (§7.4: it cannot be written to)")
+	}
+
+	// It must not displace a real contact or leak an address.
+	if len(view.Contacts) != 2 {
+		t.Fatalf("device view holds %d contacts, want c_sys plus Rosa", len(view.Contacts))
+	}
+	blob, err := json.Marshal(view)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(blob), "@") {
+		t.Errorf("device view leaked an address (I-2): %s", blob)
 	}
 }

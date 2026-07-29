@@ -1,0 +1,20 @@
+{{define "nav.html"}}
+{{if .Guardian}}
+<nav>
+  <a class="brand" href="/">Chaski</a>
+  <ul>
+    <li><a href="/"{{if eq .Nav "home"}} aria-current="page"{{end}}>Home</a></li>
+    <li><a href="/contacts"{{if eq .Nav "contacts"}} aria-current="page"{{end}}>Contacts</a></li>
+    <li><a href="/held"{{if eq .Nav "held"}} aria-current="page"{{end}}>Held Messages</a></li>
+    <li><a href="/changes"{{if eq .Nav "changes"}} aria-current="page"{{end}}>Changes</a></li>
+    <li><a href="/settings"{{if eq .Nav "settings"}} aria-current="page"{{end}}>Settings</a></li>
+    <li><a href="/account"{{if eq .Nav "account"}} aria-current="page"{{end}}>Guardians</a></li>
+  </ul>
+  <form method="post" action="/logout" class="signout">
+    <input type="hidden" name="csrf_token" value="{{.CSRF}}">
+    <span class="who">{{.Guardian}}</span>
+    <button type="submit" class="link">Sign out</button>
+  </form>
+</nav>
+{{end}}
+{{end}}

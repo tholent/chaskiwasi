@@ -1,0 +1,96 @@
+{{define "content"}}
+<p class="count">
+  {{.ActiveCount}} active, {{.TotalCount}} of {{.MaxContacts}} places used.
+  <span class="muted">Removed contacts keep their place, because their old letters still have to work.</span>
+</p>
+
+<section class="card">
+  <h2>Add a contact</h2>
+  {{if .Full}}
+    <p class="flash flash-error">The list is full. Nothing can be added until a place is freed.</p>
+  {{else}}
+  <form method="post" action="/contacts/add" class="row">
+    <input type="hidden" name="csrf_token" value="{{.CSRF}}">
+    <div>
+      <label for="add-name">Name</label>
+      <input id="add-name" name="name" required maxlength="60">
+    </div>
+    <div>
+      <label for="add-address">Email address</label>
+      <input id="add-address" name="address" type="email" required autocapitalize="none" spellcheck="false">
+    </div>
+    <button type="submit">Add contact</button>
+  </form>
+  <p class="muted">A letter announcing the change is added to the inbox. Nothing about this list changes quietly.</p>
+  {{end}}
+</section>
+
+<section class="card note">
+  <h2>What removing a contact does, and what it cannot do</h2>
+  <p>
+    Removing someone stops new letters in both directions: their mail waits for review
+    instead of reaching the device, and nothing can be sent to them.
+  </p>
+  <p>
+    <strong>It does not remove the letters they already sent.</strong> Those stay readable on
+    the device and in the mailbox, and this system cannot take them back. If you are removing
+    someone for a safety reason, that is the honest limit of what this can do — the letters
+    live in a mailbox you control, and hiding them on the device would only make the device
+    disagree with the record. You should know that now rather than in the middle of an argument.
+  </p>
+</section>
+
+<section class="card">
+  <h2>The list</h2>
+  {{if .Contacts}}
+  <table class="contacts">
+    <thead><tr><th>Name</th><th>Address</th><th>Status</th><th>Actions</th></tr></thead>
+    <tbody>
+    {{range .Contacts}}
+      <tr class="{{if not .Active}}inactive{{end}}">
+        <td>{{.Name}}</td>
+        <td>
+          <code>{{.Address}}</code>
+          {{if .PastAddresses}}
+          <div class="muted small">
+            previously: {{range $i, $a := .PastAddresses}}{{if $i}}, {{end}}<code>{{$a}}</code>{{end}}
+          </div>
+          {{end}}
+        </td>
+        <td>{{if .Active}}active{{else}}removed{{end}}</td>
+        <td class="actions">
+          {{if .Active}}
+          <form method="post" action="/contacts/deactivate">
+            <input type="hidden" name="csrf_token" value="{{$.CSRF}}">
+            <input type="hidden" name="contact_id" value="{{.ID}}">
+            <button type="submit">Remove</button>
+          </form>
+          {{else}}
+          <form method="post" action="/contacts/reactivate">
+            <input type="hidden" name="csrf_token" value="{{$.CSRF}}">
+            <input type="hidden" name="contact_id" value="{{.ID}}">
+            <button type="submit">Restore</button>
+          </form>
+          {{end}}
+          <form method="post" action="/contacts/readdress" class="inline">
+            <input type="hidden" name="csrf_token" value="{{$.CSRF}}">
+            <input type="hidden" name="contact_id" value="{{.ID}}">
+            <input name="address" type="email" placeholder="new address"
+                   aria-label="New address for {{.Name}}" autocapitalize="none" spellcheck="false" required>
+            <button type="submit">Change address</button>
+          </form>
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  <p class="muted small">
+    Changing an address is announced as loudly as adding or removing someone. Quietly pointing a
+    name at a different address is how this kind of system gets turned against the person using it.
+    The old address is kept so past letters keep showing the right name.
+  </p>
+  {{else}}
+  <p class="muted">Nobody on the list yet.</p>
+  {{end}}
+</section>
+{{end}}
