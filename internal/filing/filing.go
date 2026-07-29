@@ -217,7 +217,48 @@ func (s *Service) Start(ctx context.Context) error {
 func (s *Service) Reconcile(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// No delivery boundary: strangers only. This is the startup pass and the
+	// window-resync fallback, where there is no trustworthy cursor to separate
+	// a removed contact's new mail from their history (see ReconcileSync).
+	return s.reconcileLocked(ctx, 0, false)
+}
 
+// ReconcileSync is the per-sync reconciliation pass (§5.1), given the device's
+// own delivery cursor. Besides quarantining strangers like Reconcile, it MOVEs
+// to Held any INBOX message that resolves to an INACTIVE contact and sits
+// ABOVE deliveredUID — mail the child has not received yet, from someone who
+// has been removed from the list.
+//
+// This closes finding F-9. Without it, such a message (typically one that
+// arrived while Wasi was briefly down, so the arrival path never saw it) would
+// resolve against the tombstone at read time and be delivered as if it were
+// history — letting a contact removed *for a reason* reach the child by timing
+// a letter to an outage. Because this runs at the top of the sync, before
+// derivation, the message is in Held before the same sync could deliver it.
+//
+// deliveredUID is the device's authoritative cursor, so a rolled-back server
+// state.json cannot fool it, and the caller passes it only for a concrete
+// cursor — a window resync falls back to Reconcile, so a factory-reset device
+// legitimately re-requesting recent mail never triggers a history sweep. Mail
+// at or below deliveredUID — already-delivered history from a since-deactivated
+// contact — is deliberately left untouched (§7.2, test V-6).
+//
+// The one over-hold this accepts: a letter that arrived while its sender was
+// active but that the child had not yet synced to receive when the sender was
+// deactivated is above the cursor and inactive, so it is held for guardian
+// review rather than delivered. That is the safe direction — the guardian can
+// release it — and it is the correct default for undelivered mail from someone
+// just removed.
+func (s *Service) ReconcileSync(ctx context.Context, deliveredUID uint32) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.reconcileLocked(ctx, deliveredUID, true)
+}
+
+// reconcileLocked scans INBOX once and quarantines what does not belong.
+// holdInactive gates the F-9 rule; holdInactiveAbove is the delivery boundary
+// it uses. Caller holds mu.
+func (s *Service) reconcileLocked(ctx context.Context, holdInactiveAbove uint32, holdInactive bool) error {
 	msgs, err := s.mailbox.List(ctx, inboxFolder)
 	if err != nil {
 		return fmt.Errorf("filing: reconcile: listing %s: %w", inboxFolder, err)
@@ -231,7 +272,18 @@ func (s *Service) Reconcile(ctx context.Context) error {
 
 		h := parseHeaders(raw.Data)
 		if h.fromOK {
-			if _, resolved := s.ayllu.Resolve(h.from); resolved {
+			if contact, resolved := s.ayllu.Resolve(h.from); resolved {
+				// Resolves in the full table (tombstones and past addresses
+				// included). Leave it — history renders (§7.2) — unless it is
+				// a removed contact's not-yet-delivered mail, which is the F-9
+				// case: quarantine it before this sync could deliver it.
+				if holdInactive && !contact.Active && raw.UID > holdInactiveAbove {
+					if err := s.mailbox.Move(ctx, inboxFolder, raw.UID, s.heldFolder); err != nil {
+						return fmt.Errorf("filing: reconcile: quarantining removed-contact mail uid %d: %w", raw.UID, err)
+					}
+					s.log.Info("filing: reconciliation quarantined a removed contact's undelivered mail",
+						"uid", raw.UID, "letter_id", h.letterID)
+				}
 				continue
 			}
 		}

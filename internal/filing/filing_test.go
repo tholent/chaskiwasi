@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/tholent/chaskiwasi/internal/mailbox"
 )
 
 func TestArrival_ActiveContact_KeptAndRingsDoorbell(t *testing.T) {
@@ -315,5 +317,104 @@ func TestRunSpamBackstop_TicksPeriodically(t *testing.T) {
 	<-done
 	if got := mb.uidsIn("Held"); len(got) != 1 {
 		t.Errorf("Held after periodic backstop = %v, want the late-seeded message swept in", got)
+	}
+}
+
+// TestF9_ReconcileSyncHoldsRemovedContactUndeliveredMail is the core of the
+// fix: a removed contact's letter that the child has not yet received (UID
+// above the device's delivery cursor) is quarantined by the per-sync pass,
+// before that same sync could deliver it as history. This is the gap where a
+// contact removed for a reason reaches the child by sending during a brief
+// outage the IDLE path never saw.
+func TestF9_ReconcileSyncHoldsRemovedContactUndeliveredMail(t *testing.T) {
+	mb := newFakeMailbox()
+	store := openTestAyllu(t)
+	svc := newTestService(t, mb, store, nil)
+
+	rosa := mustAddContact(t, store, "Rosa", "rosa@example.com")
+	mustDeactivate(t, store, rosa.ID)
+
+	// Her new letter arrives at UID 5; the device's cursor is 3, so this is
+	// mail she sent after removal that the child has not received.
+	uids := mb.seed(inboxFolder, mailbox.Raw{UID: 5, Data: rawMessage("rosa@example.com", "<new@x>", "s", "b")})
+
+	if err := svc.ReconcileSync(context.Background(), 3); err != nil {
+		t.Fatalf("ReconcileSync: %v", err)
+	}
+	if containsUID(mb.uidsIn(inboxFolder), uids[0]) {
+		t.Error("a removed contact's undelivered mail was left in INBOX; it would be delivered as history (F-9)")
+	}
+	// IMAP MOVE reassigns the UID, so the message is in Held under a new one;
+	// assert by count, as the arrival tests do.
+	if got := mb.uidsIn("Held"); len(got) != 1 {
+		t.Errorf("Held = %v, want the removed contact's one quarantined letter", got)
+	}
+}
+
+// TestF9_ReconcileSyncLeavesDeliveredHistory is the guardrail: a removed
+// contact's ALREADY-delivered history (at or below the delivery cursor) must
+// never be swept into Held — that is the §7.2 / V-6 promise the fix must not
+// break.
+func TestF9_ReconcileSyncLeavesDeliveredHistory(t *testing.T) {
+	mb := newFakeMailbox()
+	store := openTestAyllu(t)
+	svc := newTestService(t, mb, store, nil)
+
+	rosa := mustAddContact(t, store, "Rosa", "rosa@example.com")
+	mustDeactivate(t, store, rosa.ID)
+
+	// Old letters at UID 1 and 2, already delivered (cursor is 3).
+	old := mb.seed(inboxFolder,
+		mailbox.Raw{UID: 1, Data: rawMessage("rosa@example.com", "<o1@x>", "s", "b")},
+		mailbox.Raw{UID: 2, Data: rawMessage("rosa@example.com", "<o2@x>", "s", "b")},
+	)
+
+	if err := svc.ReconcileSync(context.Background(), 3); err != nil {
+		t.Fatalf("ReconcileSync: %v", err)
+	}
+	for _, uid := range old {
+		if !containsUID(mb.uidsIn(inboxFolder), uid) {
+			t.Errorf("delivered history uid %d was swept into Held (§7.2, V-6)", uid)
+		}
+	}
+}
+
+// TestF9_ReconcileSyncLeavesActiveContactMail confirms the hold is scoped to
+// *inactive* contacts: an active contact's new mail above the cursor is normal
+// undelivered mail and must be delivered, not held.
+func TestF9_ReconcileSyncLeavesActiveContactMail(t *testing.T) {
+	mb := newFakeMailbox()
+	store := openTestAyllu(t)
+	svc := newTestService(t, mb, store, nil)
+
+	mustAddContact(t, store, "Rosa", "rosa@example.com") // stays active
+	uids := mb.seed(inboxFolder, mailbox.Raw{UID: 5, Data: rawMessage("rosa@example.com", "<a@x>", "s", "b")})
+
+	if err := svc.ReconcileSync(context.Background(), 3); err != nil {
+		t.Fatalf("ReconcileSync: %v", err)
+	}
+	if !containsUID(mb.uidsIn(inboxFolder), uids[0]) {
+		t.Error("an active contact's undelivered mail was quarantined; only removed contacts are held")
+	}
+}
+
+// TestF9_PlainReconcileNeverHoldsInactive guards the window-resync fallback: a
+// device with no trustworthy cursor (empty or UIDVALIDITY-stale) takes the
+// strangers-only pass, so a removed contact's mail is NOT held on that path —
+// holding "everything above zero" would sweep history on a factory reset.
+func TestF9_PlainReconcileNeverHoldsInactive(t *testing.T) {
+	mb := newFakeMailbox()
+	store := openTestAyllu(t)
+	svc := newTestService(t, mb, store, nil)
+
+	rosa := mustAddContact(t, store, "Rosa", "rosa@example.com")
+	mustDeactivate(t, store, rosa.ID)
+	uids := mb.seed(inboxFolder, mailbox.Raw{UID: 5, Data: rawMessage("rosa@example.com", "<n@x>", "s", "b")})
+
+	if err := svc.Reconcile(context.Background()); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if !containsUID(mb.uidsIn(inboxFolder), uids[0]) {
+		t.Error("plain Reconcile quarantined an inactive contact's mail; only ReconcileSync may (F-9 window-resync fallback)")
 	}
 }

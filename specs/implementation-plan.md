@@ -160,6 +160,14 @@ structs, sample `wasi.toml`/`ayllu.toml`, Makefile, CI-less test targets.
 
 ## 4a. Findings against the spec
 
+**Status:** F-1, F-2, F-5, F-6, F-7 were resolved during the build. F-3 and F-9
+were resolved after review, on the user's decision (tell the child on a
+permanent send failure; close the removal-during-outage gap). All are now folded
+into `wasi-server-plan.md` as decision-log entries A.11–A.18 and inline edits to
+§4.7, §5.1, §7.2, §7.6, and §8 — the authoritative spec and this plan agree. F-4
+(V-8 vs §6.2 wording) stands as a binding test-writing note, not a code change.
+
+
 Recorded here rather than fixed silently, in the spirit of Appendix A. Both were
 found while implementing §7 and both change behaviour the spec did not pin down.
 
@@ -191,8 +199,8 @@ decision is made once, at arrival; history is immutable." So reconciliation
 quarantines strangers only — senders that do not resolve against the full table,
 tombstones and past addresses included. Wave 2 implements it that way.
 
-**F-3 · §4.7 cannot express a permanent SMTP rejection. Needs a wire change —
-open decision, not resolved.**
+**F-3 · §4.7 cannot express a permanent SMTP rejection. RESOLVED (A.11) — new
+terminal ack `rejected_undeliverable`.**
 The four ack statuses are all terminal, and the send in step 4 precedes the ack
 in step 5. That covers transient failure (retry) and pre-send rejection
 (`invalid`, `rejected_inactive`, `rejected_unknown_contact`), but nothing covers
@@ -306,7 +314,8 @@ last good table rather than locking every guardian out. Covered by two tests,
 one per face of the bug.
 
 **F-9 · A deactivated contact's new mail is delivered, not held, if Wasi is
-down when it arrives. OPEN — a real safeguarding gap, needs your decision.**
+down when it arrives. RESOLVED (A.13) — reconciliation holds inactive-resolving
+mail above the device's delivery cursor.**
 Found by the e2e suite (V-6 and V-18 flaked on it). The split is deliberate and
 mostly correct: the IDLE arrival path resolves active-only, so a deactivated
 contact's new letter is quarantined to Held (§5.1, §7.2); reconciliation

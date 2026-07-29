@@ -90,7 +90,13 @@ type KipuLog interface {
 // An interface, and optional, because filing owns the behaviour and the sync
 // path owns only this half of it.
 type Reconciler interface {
+	// Reconcile quarantines strangers only. Used when there is no trustworthy
+	// delivery boundary — a window resync.
 	Reconcile(ctx context.Context) error
+	// ReconcileSync additionally holds a removed contact's not-yet-delivered
+	// mail (above deliveredUID) before this sync can deliver it (F-9). Used
+	// when the request carries a concrete cursor.
+	ReconcileSync(ctx context.Context, deliveredUID uint32) error
 	CheckSpam(ctx context.Context) (int, error)
 }
 
@@ -321,7 +327,24 @@ func (h *Handler) sync(ctx context.Context, cfg *config.Config, req request) (*p
 	now := h.deps.Now().UTC()
 
 	if h.deps.Reconciler != nil {
-		if err := h.deps.Reconciler.Reconcile(ctx); err != nil {
+		// The device's own cursor is the boundary between mail it already holds
+		// (history, at/below) and mail not yet delivered (above). When it is
+		// concrete, reconciliation uses it to hold a removed contact's new mail
+		// before this same sync could deliver it as history (F-9). An empty or
+		// UIDVALIDITY-stale cursor is a window resync with no meaningful
+		// boundary, so it falls back to the strangers-only pass — holding
+		// "everything above zero" would sweep real history into Held.
+		uidValidity, err := h.deps.Mailbox.UIDValidity(ctx)
+		if err != nil {
+			return nil, unreachableError(fmt.Errorf("syncsvc: reconcile uidvalidity: %w", err))
+		}
+		deliveredUID, concrete := cursorBoundary(req.Cursor, uidValidity)
+		if concrete {
+			err = h.deps.Reconciler.ReconcileSync(ctx, deliveredUID)
+		} else {
+			err = h.deps.Reconciler.Reconcile(ctx)
+		}
+		if err != nil {
 			return nil, unreachableError(fmt.Errorf("syncsvc: reconcile: %w", err))
 		}
 		// The spam sweep does not gate the sync the way reconcile does. A
@@ -419,12 +442,12 @@ func (h *Handler) assembleLetters(ctx context.Context, cfg *config.Config, curso
 		return 0, 0, unreachableError(fmt.Errorf("syncsvc: uidvalidity: %w", err))
 	}
 
-	cursorValidity, cursorUID, ok := decodeCursor(cursor)
-
 	// A cursor whose uidvalidity no longer matches is treated exactly as "" —
 	// no special path and no error to the device, so UIDVALIDITY resets are
-	// invisible on the wire and need no firmware path (§4.4, test V-21).
-	resync := !ok || cursorValidity != uidValidity
+	// invisible on the wire and need no firmware path (§4.4, test V-21). This
+	// is the same boundary reconciliation uses, via the shared helper.
+	cursorUID, concrete := cursorBoundary(cursor, uidValidity)
+	resync := !concrete
 	lastUID = cursorUID
 	if resync {
 		lastUID = 0

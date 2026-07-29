@@ -32,6 +32,23 @@ func encodeCursor(uidValidity, lastUID uint32) string {
 // uidvalidity. Any other choice would invent a firmware path for a state the
 // device cannot repair on its own, and a bounded resync repairs it in one
 // round-trip with the device's own dedup (§4.5) absorbing the overlap.
+// cursorBoundary reports the UID the device has already received (its delivery
+// boundary) and whether that boundary is trustworthy. It is concrete only when
+// the cursor decodes AND its UIDVALIDITY matches the mailbox's current one;
+// otherwise the request is a window resync (§4.4) with no meaningful boundary.
+//
+// Both reconciliation (which holds a removed contact's undelivered mail above
+// this boundary, F-9) and assembleLetters (which delivers above it) derive
+// their boundary here, so the "held" line and the "delivered" line can never
+// drift apart.
+func cursorBoundary(cursor string, uidValidity uint32) (deliveredUID uint32, concrete bool) {
+	cv, cu, ok := decodeCursor(cursor)
+	if !ok || cv != uidValidity {
+		return 0, false
+	}
+	return cu, true
+}
+
 func decodeCursor(s string) (uidValidity, lastUID uint32, ok bool) {
 	if s == "" {
 		return 0, 0, false

@@ -303,3 +303,45 @@ func TestV17_NoticeSurvivesACrash(t *testing.T) {
 		}
 	}
 }
+
+// TestF9_OutageArrivalFromARemovedContactIsHeldOnTheNextSync is the
+// end-to-end proof of the F-9 fix, and unlike the deactivated-arrival cases it
+// is reliable in this fixture because it drives the sync path, not IDLE.
+//
+// The scenario the fix closes: a contact is removed (often for a reason), and
+// then sends a new letter during a moment Wasi was down, so the arrival path
+// never quarantined it. It is now sitting in INBOX. The child's next sync must
+// hold it for guardian review — before that same sync could deliver it as
+// history — because at read time it still resolves against the tombstone.
+func TestV24_OutageArrivalFromARemovedContactIsHeld(t *testing.T) {
+	h := newHarness(t)
+	dev := h.newDevice(t)
+
+	theo := h.addContact(t, "Theo", relativeAddress)
+	dev.sync(t) // establishes a concrete delivery cursor
+	h.ui.deactivate(t, theo)
+
+	// Seeded straight into INBOX, above the device's cursor, standing in for a
+	// letter that arrived while Wasi was down: nothing examined it at arrival,
+	// and it resolves to Theo's tombstone, so without the fix the next sync
+	// would derive and deliver it.
+	mark := nonce(t)
+	h.mail.add(t, childAddress, inboxFolder, letter{
+		From:      "Theo <" + relativeAddress + ">",
+		Subject:   "slipping through " + mark,
+		MessageID: "outage-arrival-" + mark + "@chaski.test",
+		Body:      "did this reach you " + mark,
+	}.bytes())
+
+	// A normal sync (concrete cursor) runs the per-sync reconciliation, which
+	// holds the removed contact's undelivered mail before assembling letters.
+	resp := dev.sync(t)
+	for _, l := range resp.Letters {
+		if strings.Contains(l.Body, mark) {
+			t.Fatalf("a removed contact's outage letter was delivered to the child (F-9)")
+		}
+	}
+	if !h.mail.holds(t, childAddress, heldFolder, mark) {
+		t.Errorf("the removed contact's letter was neither delivered nor held — it must be held for review")
+	}
+}

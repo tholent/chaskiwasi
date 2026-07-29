@@ -175,6 +175,16 @@ func (h *Handler) sendOne(ctx context.Context, cfg *config.Config, item outbound
 		return "", err
 	}
 	if err := h.deps.Submitter.Send(ctx, cfg.Mail.Address, []string{contact.Address}, msg); err != nil {
+		// A permanent 5xx rejection (a dead recipient address) is terminal:
+		// retrying it every sync forever would never deliver the letter and
+		// would leave the child watching "on the road" for something that can
+		// never land. Hand back a terminal reject so the device stops and shows
+		// "couldn't send — ask your guardians" (§4.7, A.11). A transient failure
+		// (4xx) or an unreachable server returns an error instead, and the
+		// caller leaves the letter unacked to be retried.
+		if mailbox.IsPermanentReject(err) {
+			return protocol.AckRejectedUndeliverable, nil
+		}
 		return "", err
 	}
 	return protocol.AckSent, nil

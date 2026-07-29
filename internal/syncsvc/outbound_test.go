@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/emersion/go-smtp"
+
 	"github.com/tholent/chaskiwasi/internal/mailbox"
 	"github.com/tholent/chaskiwasi/internal/protocol"
 )
@@ -301,5 +303,59 @@ func assertAcks(t *testing.T, got, want []protocol.Ack) {
 		if got[i] != want[i] {
 			t.Fatalf("ack %d = %+v, want %+v (full: %+v)", i, got[i], want[i], got)
 		}
+	}
+}
+
+// TestV23_PermanentRejectionIsTerminal covers A.11 / F-3: a 5xx from the mail
+// server (a dead recipient address) becomes a terminal reject, so the device
+// stops retrying and surfaces "couldn't send" instead of showing "on the road"
+// forever for a letter that can never land. It must also be idempotent under
+// replay, like every other terminal ack (§4.7, V-9).
+func TestV23_PermanentRejectionIsTerminal(t *testing.T) {
+	hn := newHarness(t)
+	hn.sub.err = &smtp.SMTPError{Code: 550, EnhancedCode: smtp.EnhancedCode{5, 1, 1}, Message: "no such user here"}
+
+	resp := hn.sync(protocol.Request{
+		Cursor: hn.currentCursor(), AylluVersion: 7,
+		Outbound: []protocol.Outbound{{LocalID: "o-1", ContactID: "c_01", Body: "hello"}},
+	})
+	assertAcks(t, resp.Acks, []protocol.Ack{{LocalID: "o-1", Status: protocol.AckRejectedUndeliverable}})
+
+	// Terminal means recorded in the ring: a replay returns the same reject and
+	// does not attempt the dead address again.
+	ring := hn.state.Snapshot().Acks
+	entry, replayed := ring.Lookup("o-1")
+	if !replayed || entry.Status != string(protocol.AckRejectedUndeliverable) {
+		t.Fatalf("permanent rejection not recorded terminally: %+v (replayed=%v)", entry, replayed)
+	}
+	hn.sub.err = nil // even if the server recovered, a terminal ack is not re-sent
+	before := hn.sub.count()
+	replay := hn.sync(protocol.Request{
+		Cursor: hn.currentCursor(), AylluVersion: 7,
+		Outbound: []protocol.Outbound{{LocalID: "o-1", ContactID: "c_01", Body: "hello"}},
+	})
+	assertAcks(t, replay.Acks, []protocol.Ack{{LocalID: "o-1", Status: protocol.AckRejectedUndeliverable}})
+	if hn.sub.count() != before {
+		t.Fatal("a terminally-rejected letter was submitted again on replay")
+	}
+}
+
+// TestOutbound_TransientRejectionIsRetried is the other half of F-3: a 4xx is
+// "try again later", not "never", so it must NOT become terminal — the letter
+// stays unacked and is re-sent, exactly as an unreachable server is.
+func TestOutbound_TransientRejectionIsRetried(t *testing.T) {
+	hn := newHarness(t)
+	hn.sub.err = &smtp.SMTPError{Code: 451, Message: "greylisted, try later"}
+
+	resp := hn.sync(protocol.Request{
+		Cursor: hn.currentCursor(), AylluVersion: 7,
+		Outbound: []protocol.Outbound{{LocalID: "o-1", ContactID: "c_01", Body: "hello"}},
+	})
+	if len(resp.Acks) != 0 {
+		t.Fatalf("a transient 4xx produced an ack %+v; it must stay unacked to retry", resp.Acks)
+	}
+	ring := hn.state.Snapshot().Acks
+	if _, replayed := ring.Lookup("o-1"); replayed {
+		t.Fatal("a transient failure was recorded terminally in the ring")
 	}
 }

@@ -100,6 +100,17 @@ const (
 	// AckInvalid means the payload failed validation: empty body, over the
 	// grapheme cap, or unknown fields (§4.7 step 2).
 	AckInvalid AckStatus = "invalid"
+	// AckRejectedUndeliverable means the mail server permanently refused the
+	// letter — a 5xx reply, e.g. the recipient address no longer exists. Like
+	// the other rejects it is terminal: the device stops retrying and surfaces
+	// "couldn't send — ask your guardians" while keeping the text visible.
+	//
+	// Without this, a permanently-dead address had no terminal status, so the
+	// device retried forever and the child saw "on the road" for a letter that
+	// could never arrive (decision log A.11). A *transient* failure (4xx, or an
+	// unreachable server) is deliberately NOT this — those still leave the
+	// letter unacked to be retried.
+	AckRejectedUndeliverable AckStatus = "rejected_undeliverable"
 )
 
 // Ack reports the terminal outcome for one outbound local_id (§4.7).

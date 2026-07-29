@@ -177,3 +177,20 @@ func isTransportErr(ctx context.Context, err error) bool {
 	var smtpErr *smtp.SMTPError
 	return !errors.As(err, &smtpErr)
 }
+
+// IsPermanentReject reports whether err is a genuine SMTP rejection carrying a
+// 5xx code — a permanent negative reply (RFC 5321 §4.2.1). The server will
+// refuse this exchange no matter how often it is retried: a recipient address
+// that no longer exists is the archetype. A 4xx reply ("try again later") and a
+// transport failure are transient and are NOT permanent.
+//
+// This is the classification F-3 turns on: only a permanent rejection earns the
+// device a terminal "undeliverable" ack, so a dead address is surfaced to the
+// child once instead of being retried on every sync forever.
+func IsPermanentReject(err error) bool {
+	var smtpErr *smtp.SMTPError
+	if !errors.As(err, &smtpErr) {
+		return false
+	}
+	return smtpErr.Code >= 500 && smtpErr.Code < 600
+}
