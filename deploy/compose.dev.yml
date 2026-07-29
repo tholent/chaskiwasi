@@ -114,6 +114,11 @@ services:
       - wasi_tls:/config/tls:ro
       - maddy_tls:/config/maddy-tls:ro
       - wasi_data:/data
+      # §3's backup destination, and the second half of what V-11's storage
+      # grep walks. It is mounted even though `wasi backup` is not implemented
+      # yet, so that the day it is, the invariant test is already looking at
+      # the right place rather than at nothing.
+      - wasi_backups:/backups
     environment:
       # Fixture-only: maddy serves a self-signed cert, and Fastmail (which
       # this stands in for) serves a publicly-trusted one. Go reads
@@ -139,3 +144,4 @@ volumes:
   maddy_data:
   maddy_tls:
   wasi_data:
+  wasi_backups:

@@ -57,4 +57,18 @@ else
     echo "init: created storage account for $RELATIVE"
 fi
 
+# A mailbox belonging to nobody on the contact list. It exists so that "no
+# bounce, ever" (I-3, §5.1, V-5) is a checkable claim rather than an assumed
+# one: a bounce, an auto-reply, or a courtesy notification would have to land
+# somewhere, and without a local mailbox for the stranger there is nowhere for
+# a test to look. Recipient only, like the relative — it never authenticates.
+STRANGER="${MADDY_STRANGER_USER:-stranger@chaski.test}"
+
+if maddy imap-acct list | grep -qxF "$STRANGER"; then
+    echo "init: storage account for $STRANGER already exists"
+else
+    maddy imap-acct create "$STRANGER"
+    echo "init: created storage account for $STRANGER"
+fi
+
 echo "init: done"

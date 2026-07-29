@@ -31,9 +31,16 @@ func main() {
 			fmt.Fprintf(os.Stderr, "wasi: %v\n", err)
 			os.Exit(1)
 		}
-	case "backup", "contacts":
-		fmt.Fprintf(os.Stderr, "wasi: %s is not implemented yet\n", os.Args[1])
-		os.Exit(1)
+	case "backup":
+		if err := runBackup(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "wasi: %v\n", err)
+			os.Exit(1)
+		}
+	case "contacts":
+		if err := runContacts(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "wasi: %v\n", err)
+			os.Exit(1)
+		}
 	default:
 		usage()
 		os.Exit(2)

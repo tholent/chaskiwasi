@@ -18,7 +18,11 @@
 #
 # Only CA-A is minted here. The escrow CA-B of §12.2 is a production
 # ceremony — an offline key in a safe — and has nothing to stand in for in a
-# container that regenerates on `make down -v`.
+# container that regenerates on `make down -v`. For the real ceremony (two
+# independent offline CAs, an offline-signed ~2-year leaf, and the cutover
+# procedure), see ceremony/README.md alongside this script — do not adapt
+# this file for production use; it is a dev fixture on purpose (single
+# online CA, RSA-2048, no offline step at all).
 #
 # Idempotent: an existing set is left alone rather than rotated, so restarts
 # don't invalidate a CA the simulator has already pinned.

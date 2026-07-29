@@ -21,11 +21,11 @@ COPY . .
 # across the arm64/amd64 split without per-arch libc concerns.
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/wasi ./cmd/wasi
 
-# An empty /data owned by the runtime uid, staged here so the next stage can
-# COPY it with that ownership. See the VOLUME comment below for why this
-# matters — distroless has no shell, so a RUN mkdir/chown in the final stage
-# is not available.
-RUN mkdir -p /out/data
+# Empty /data and /backups, owned by the runtime uid, staged here so the
+# next stage can COPY them with that ownership. See the VOLUME comments
+# below for why this matters — distroless has no shell, so a RUN
+# mkdir/chown in the final stage is not available.
+RUN mkdir -p /out/data /out/backups
 
 # distroless/static-debian12:nonroot: no shell, no package manager, nothing
 # but the binary's own dynamic-linker-free runtime needs — and it already
@@ -49,6 +49,17 @@ COPY --from=build /out/wasi /usr/local/bin/wasi
 # Running as root would "fix" it by giving up §14.
 COPY --from=build --chown=65532:65532 /out/data /data
 VOLUME ["/data"]
+
+# Same footgun, same fix, for wasi.toml's backup.dir default (§3, §13):
+# `wasi backup` runs as 65532 too, and a named volume Docker seeds fresh at
+# /backups with nothing there in the image comes out root-owned, same as
+# /data would without the COPY above — the backup command fails its very
+# first write with "permission denied" and no hint why. This only helps
+# operators using the documented default path; a backup.dir pointed at a
+# different volume or a host bind mount needs its ownership arranged by
+# whoever provisions it, the same as any other host-side mount.
+COPY --from=build --chown=65532:65532 /out/backups /backups
+VOLUME ["/backups"]
 
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/wasi"]

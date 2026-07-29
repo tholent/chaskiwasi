@@ -305,6 +305,35 @@ and every write, and re-stamps after its own writes. A malformed file keeps the
 last good table rather than locking every guardian out. Covered by two tests,
 one per face of the bug.
 
+**F-9 · A deactivated contact's new mail is delivered, not held, if Wasi is
+down when it arrives. OPEN — a real safeguarding gap, needs your decision.**
+Found by the e2e suite (V-6 and V-18 flaked on it). The split is deliberate and
+mostly correct: the IDLE arrival path resolves active-only, so a deactivated
+contact's new letter is quarantined to Held (§5.1, §7.2); reconciliation
+resolves the full table and holds strangers only, because an active-only
+reconcile would sweep that contact's already-delivered history into Held, which
+V-6 forbids (this is finding F-2). The consequence: **the deactivated-arrival
+quarantine depends entirely on IDLE running.** If Wasi is down at the moment a
+deactivated contact sends new mail, reconciliation on the next startup/sync
+resolves them against the full table, finds the tombstone, and delivers the
+letter as history — the channel a guardian closed reopens for one letter, with
+no announcement.
+
+Why this resists a quick fix: distinguishing a deactivated contact's *new* mail
+from their *already-delivered history*, both sitting in INBOX resolving to the
+same tombstone, needs a per-message "was this examined at arrival while the
+sender was active" signal. The IDLE path has it (it sees each message live);
+reconciliation, a batch catch-up, does not, and reconstructing it from the
+arrival high-water mark breaks when mail arrived-while-active but was not yet
+synced before deactivation. A cursor-mirror bound narrows the window but does
+not close it and couples filing to state it does not currently hold. Because
+this is safeguarding logic (a contact is often deactivated *for* a reason), it
+should be designed deliberately, not patched at the end of a build. Options to
+weigh: (a) accept it and document that deactivation quarantine is best-effort
+during an outage; (b) give filing the delivery-cursor mirror and hold
+inactive-resolving mail above it; (c) persist a per-arrival filed-set. Left for
+the owner.
+
 ## 5. Risks tracked during the build
 
 - **maddy ≠ Fastmail.** No spam foldering, IDLE and MOVE semantics differ. V-16 injects the

@@ -20,6 +20,8 @@ make e2e    # up, then go test -tags e2e ./test/e2e/...
 | `maddy/init.sh` | One-shot: creates the test account and the `Held` mailbox |
 | `wasi.example.toml` | A fully commented `wasi.toml`, wired to this stack's service names, covering every key in §13's table |
 | `Dockerfile` | Wasi's own image: distroless, static, non-root (§14) |
+| `wasi/gen-certs.sh` | Dev-only: mints throwaway TLS material for this stack. **Not** the production ceremony. |
+| `wasi/ceremony/` | The production TLS ceremony: two offline root CAs, an offline-signed server leaf, and the cutover procedure (§12.2). See "TLS in production" below. |
 
 `services/strip/Dockerfile` builds the strip service; it lives under
 `services/strip/`, not here, since that's where its source and golden
@@ -103,15 +105,15 @@ needs `TLSConfig: &tls.Config{InsecureSkipVerify: true}` — never do this
 against a real mail provider; it's only correct here because the fixture's
 private network is the actual trust boundary, not the certificate.
 
-## `wasi`'s container exits immediately, and that's expected right now
+## The `wasi` container
 
-`cmd/wasi`'s `serve` subcommand isn't implemented yet (that's Wave 2B/3B in
-`specs/implementation-plan.md`); today it prints "not implemented yet" and
-exits 1. The `wasi` service is still fully wired up in `compose.dev.yml` —
-config mounted, secrets set, `depends_on` health checks on `maddy` and
-`strip` — so nothing here needs to change when `serve` lands. Until then,
-`make up` bringing up a `wasi` container that immediately stops is normal,
-not a broken fixture.
+`make up` brings up a `wasi` container running `serve`: two TLS listeners
+(device sync and guardian UI), config hot-reload, the kipu retention
+sweeper, and the filing/IDLE loop. It waits on `maddy` and `strip` health
+checks and on a one-shot `wasi-certs` service that mints its dev
+certificates. A healthy start logs `device listener starting` and `guardian
+listener starting`; the device sync endpoint is on host port 18443 and the
+guardian UI on 18444.
 
 ## What was verified live against this stack (Wave 1C)
 
@@ -128,9 +130,182 @@ not a broken fixture.
   bearer token, and correctly strips a quoted reply when authenticated — and
   none of that traffic appears in `docker compose logs strip`.
 - The `wasi` image builds, runs as `nonroot:nonroot` under `--read-only`,
-  and exits with the expected "not implemented yet" message.
+  and `serve` starts both listeners; a letter injected into `maddy` syncs to
+  a simulated device and a composed reply is delivered back through `maddy`.
 
-Not yet verified live (nothing to verify yet): the full `docker compose up`
-of all five services together end-to-end, since `wasi serve` doesn't run a
-server yet. Wave 2B/3B should re-run the checks above as part of standing up
-`test/e2e`.
+The full end-to-end flow across all services is now exercised by the `e2e`
+suite (`test/e2e/`, run with `make e2e`), which brings this stack up and
+drives the §15 V-table against it.
+
+## `wasi backup` (§3, §14)
+
+```sh
+wasi backup [-data /data] [-config /config/wasi.toml] [-dir DIR] [-retain-days N] [-skip-retention]
+```
+
+Copies `-data` — **excluding `kipu/`** — into a new timestamped directory
+under the backup destination (`backup.dir` / `backup.retain_days` from
+`wasi.toml` by default; `-dir` / `-retain-days` override them), then deletes
+whole backup directories older than the retention window. The kipu
+exclusion is not configurable anywhere — no flag, no config key — on
+purpose: kipu's day-files are retained for exactly `kipu.retention_days` so
+that whole-file deletion is the erasure story (design-spec §3.7); a backup
+that captured them would silently extend that window by `backup.retain_days`
+on top, putting deleted day-files back within reach of exactly the case
+§3.7 exists to guard against — an accumulated location history in a
+contested household.
+
+**Safe to run against a live server.** Unlike `wasi contacts` below, backup
+does not require (or check for) a stopped server — routine backups of a
+running deployment are the normal case. What it actually does is a plain
+recursive copy against files a running `serve` may be concurrently
+rewriting, and the guarantee that gives you is worth stating precisely:
+
+- Every individual file it copies — `ayllu.toml`, `state.json`,
+  `guardians.toml`, `ayllu-log.jsonl` — is always a complete, non-torn
+  generation of that file, because `internal/atomicfile`'s write discipline
+  (temp file, fsync, rename, fsync directory) never leaves a reader able to
+  observe a half-written one.
+- Across files, it is a "fuzzy" snapshot, not one consistent instant. For
+  `state.json` that's fine by design: §10.3 exists specifically so a
+  restored `state.json`, arbitrarily stale relative to the mailbox, heals
+  itself over the next sync rather than silently breaking the doorbell. For
+  the `ayllu.toml`/`ayllu-log.jsonl` pair, the exposure is narrow — the
+  width of one contact-list mutation, not the width of the whole backup —
+  because the store holds its own lock across writing both. A backup taken
+  while nobody happens to be mid-edit on the contact list (the overwhelming
+  majority of the time, since this list changes rarely) sees the pair
+  consistently. A backup taken with the server stopped is the only way to
+  get a formally guaranteed-consistent snapshot of that pair; this command
+  does not claim more than the above for a live one.
+
+**Restore is `cp` back, plus one sync — deliberately no more machinery than
+that (§3).** Copy a chosen backup directory's contents over `/data` and
+start `wasi serve`. The pututu counter in `state.json` self-heals over the
+sync wire even from an arbitrarily old backup (§10.3); nothing else needs
+operator repair, for the reasons above.
+
+**Ownership note for the `/backups` volume:** exactly like `/data` (see
+"Image invariants" below), a Docker named volume mounted at `/backups` with
+nothing staged there in the image comes out root-owned, and `wasi backup`
+(running as uid 65532) cannot write its first backup into it. The image
+stages an empty, correctly-owned `/backups` for the documented default path;
+pointing `backup.dir` at a different volume or a host bind mount means
+arranging that ownership yourself, the same as for any other host-side mount.
+
+## `wasi contacts` (§14)
+
+```sh
+wasi contacts list   [-data /data] [-config /config/wasi.toml]
+wasi contacts add        -name NAME -address ADDR [-actor NAME] [-pinned] [-order N] [-portrait ID]
+wasi contacts deactivate <contact-id> [-actor NAME]
+wasi contacts reactivate <contact-id> [-actor NAME]
+wasi contacts readdress  <contact-id> -address ADDR [-actor NAME]
+```
+
+Contact-list maintenance for when hand-editing `ayllu.toml` isn't the right
+tool — recovering from a mistake without hand-editing TOML at all.
+`list` shows every contact, tombstones marked `TOMBSTONE` rather than left
+to be inferred from a blank status column. `reactivate` undoes an accidental
+`deactivate`; `readdress` fixes a mistyped or changed address without ever
+touching the file by hand.
+
+**The server must be stopped, and this is enforced, not just documented.**
+`ayllu.toml` is hand-editable — and therefore CLI-editable — only while Wasi
+is stopped (§3): two writers to one file is exactly the failure mode
+implementation-plan.md's F-8 found as a real bug in `guardians.toml` (`wasi
+useradd` wrote the file while the running server held a stale copy, and the
+server's next write deleted the account the CLI had just added). F-8 was
+fixed by making the guardian store re-read the file on change; `wasi
+contacts` deliberately does **not** copy that fix, because a contact-list
+mutation carries an announcement obligation (I-4) that a guardian account
+doesn't, and re-reading the file on the server side would do nothing about
+the running server's notice machinery having no way to learn a CLI-made
+change happened at all. So `contacts` takes an exclusive, non-blocking
+advisory lock (`flock(2)`) on `/data/.wasi.lock` and refuses outright if
+`wasi serve` already holds it — `serve` takes and holds the same lock for
+its entire run. The lock is released automatically by the kernel if the
+holding process dies for any reason, including `SIGKILL`, so there is no
+stale-lock state to clean up by hand.
+
+**No mutation sends a notice letter itself.** A stopped-server CLI has no
+live IMAP connection, so it cannot APPEND one — that would be a promise
+this command can't keep. What every mutation *does* guarantee is the durable
+record I-4 depends on: `ayllu.toml` is rewritten atomically and
+`ayllu-log.jsonl` gets a new line before the command exits successfully
+(§7.6). The next `wasi serve` start already reads that log and announces
+anything with no matching notice yet in INBOX (`notice.Service.Reconcile`,
+built for exactly this kind of crash recovery — a durable change with no
+notice yet looks identical whether the previous process crashed mid-announce
+or the change came from this CLI). Every mutation prints as much, so this is
+never mistaken for I-4's one forbidden outcome: a change with no
+announcement, ever.
+
+## TLS in production (§12.2)
+
+The device listener and the guardian listener use two unrelated trust
+models — do not conflate them:
+
+- **Device listener:** a private dual-CA pin, `deploy/wasi/ceremony/` is the
+  full procedure — two independent ~20-year offline root CAs (the firmware
+  trust store ships both, so a lost or compromised CA-A can be cut over
+  without touching a single device already in the field), signing a ~2-year
+  server leaf in an offline ceremony. `deploy/wasi/gen-certs.sh` is the dev
+  stand-in for this and is **not** adaptable for production use — see its
+  own header comment.
+- **Guardian listener:** an ordinary Let's Encrypt leaf via your DNS-01
+  proxy of choice, because guardians connect from ordinary browsers that
+  need to trust it without installing a private CA. It rotates on Let's
+  Encrypt's own ~90-day cadence and has nothing to do with the device path.
+  This repo does not script that half — it's exactly what any other web
+  service behind Let's Encrypt does, with `guardian.tls_cert` /
+  `guardian.tls_key` in `wasi.toml` pointed at whatever your ACME client
+  writes.
+
+## Image invariants (§14)
+
+`deploy/Dockerfile` builds a **distroless, statically linked, non-root**
+image with a **read-only root filesystem except `/data` and `/backups`**.
+Verified live against a built image: the binary is a static ELF with no
+dynamic interpreter; the container has no shell (`/bin/sh` does not exist);
+the process runs as `nonroot:nonroot` (uid/gid 65532); `docker run
+--read-only` succeeds and both `/data` and `/backups` are writable while
+everything else is not.
+
+**The `/data` and `/backups` ownership fix.** Docker seeds a *fresh* named
+volume from whatever the image has at that mount path, ownership included.
+With nothing staged there, a fresh volume comes out root-owned and the
+non-root process gets "permission denied" on its very first write — not a
+theoretical concern, it's exactly what an empty `/backups` volume does
+without the fix below. The Dockerfile stages empty `/data` and `/backups`
+directories owned by uid/gid 65532 in the build stage and `COPY
+--chown=65532:65532`s them into the final image *before* the matching
+`VOLUME` declaration, specifically so a fresh named volume inherits correct
+ownership. Do not remove either `COPY --chown` step or reorder it after the
+`VOLUME` line — distroless has no shell, so there is no `RUN
+mkdir/chown` fallback available if this regresses.
+
+## Operational facts learned the hard way
+
+- **`wasi useradd` works against a running server.** `guardians.FileStore`
+  re-reads `guardians.toml` when its mtime or size changes, so a guardian
+  account created by `useradd` while `serve` is up is usable immediately —
+  no restart needed (implementation-plan.md's F-8). This is the one
+  CLI-vs-running-server case in this codebase where re-reading was the
+  right fix; `wasi contacts` above explains why the identical-looking
+  problem for `ayllu.toml` was fixed the other way instead.
+- **The guardian UI's login form field is `guardian`**, not `username` or
+  `name` — `r.PostFormValue("guardian")`. Scripting a login needs that exact
+  field name.
+- **Its CSRF hidden field is `csrf_token`.** Every rendered page carries a
+  fresh one (`internal/web/csrf.go`); it's bound to the signed-in guardian
+  and their session epoch, so a token survives across pages in one session
+  but not across a password change.
+- **Every unsafe (state-changing) request needs an `Origin` header whose
+  host matches the request's own `Host`.** The guardian UI's CSRF defense
+  checks `Sec-Fetch-Site` first and falls back to `Origin`; a request
+  carrying neither is refused outright, including the login POST itself —
+  this UI is browser-only by construction. A `curl` script against it needs
+  `-H "Origin: https://<guardian-listen-host>:<port>"` matching the `Host`
+  header on the same request, or every POST (including sign-in) gets a 403
+  regardless of credentials.

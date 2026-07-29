@@ -82,6 +82,21 @@ func runServe(args []string) error {
 	}
 	cfg := watcher.Current()
 
+	// §3: only one process may hold /data at a time. This is the other half
+	// of `wasi contacts`'s two-writers protection (see lock_unix.go's
+	// acquireDataLock and the F-8 discussion there) — held for this whole
+	// process's lifetime, so a `wasi contacts` invocation started while this
+	// is running reliably finds it busy and refuses, rather than racing
+	// ayllu.toml the way F-8 raced guardians.toml.
+	releaseDataLock, err := acquireDataLock(*dataDir)
+	if err != nil {
+		if errors.Is(err, errDataDirBusy) {
+			return fmt.Errorf("serve: %s is already in use by another wasi process", *dataDir)
+		}
+		return err
+	}
+	defer releaseDataLock()
+
 	stateStore, err := state.Open(*dataDir)
 	if err != nil {
 		return err
@@ -309,8 +324,13 @@ func runFiling(ctx context.Context, mbox mailbox.Mailbox, svc *filing.Service, l
 				return
 			case <-notify:
 				if err := svc.HandleNotify(ctx); err != nil {
-					// A notification path, not an ingest path: the next sync's
-					// reconciliation covers whatever this missed (§5.1).
+					// For a stranger's arrival, the next sync's reconciliation
+					// is a genuine backstop. For a *deactivated* contact's
+					// arrival it is not — reconciliation resolves the full table
+					// and holds strangers only (F-2), so this IDLE path is the
+					// only thing that quarantines a tombstone's new mail (§5.1,
+					// §7.2). A failure here that IDLE does not retry is the gap
+					// finding F-9 describes.
 					logger.Error("serve: filing an arrival failed", "error", err)
 				}
 			}

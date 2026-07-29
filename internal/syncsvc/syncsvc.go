@@ -74,14 +74,24 @@ type KipuLog interface {
 	Append(block map[string]any, at time.Time) error
 }
 
-// Reconciler quarantines anything in INBOX whose sender does not resolve,
-// before derivation can let the cursor pass it by (§5.1, test V-15).
+// Reconciler is the sync path's slice of §5.1: the two filing duties that must
+// run "at the top of every sync". Both are here because both share that
+// trigger, and neither is any use if only run at startup — a stranger's mail,
+// or a provider-spam-filed letter, that arrives between syncs must be caught on
+// the next one, not left until the 15-minute ticker happens to fire.
 //
-// It is an interface here, and optional, because filing owns the behaviour and
-// the sync path only owns the "at the top of every sync" half of §5.1's "at
-// startup and at the top of every sync".
+//   - Reconcile quarantines anything in INBOX whose sender does not resolve,
+//     before derivation can let the cursor pass it by (test V-15).
+//   - CheckSpam sweeps the provider's Spam/Junk folder into Held, the one path
+//     by which family mail could vanish with neither device nor guardian ever
+//     learning it existed (test V-16). Its own comment claimed it ran at each
+//     sync; until it was added here it ran only at startup and on the ticker.
+//
+// An interface, and optional, because filing owns the behaviour and the sync
+// path owns only this half of it.
 type Reconciler interface {
 	Reconcile(ctx context.Context) error
+	CheckSpam(ctx context.Context) (int, error)
 }
 
 // Deps are the handler's collaborators. Everything is injected so the whole of
@@ -313,6 +323,15 @@ func (h *Handler) sync(ctx context.Context, cfg *config.Config, req request) (*p
 	if h.deps.Reconciler != nil {
 		if err := h.deps.Reconciler.Reconcile(ctx); err != nil {
 			return nil, unreachableError(fmt.Errorf("syncsvc: reconcile: %w", err))
+		}
+		// The spam sweep does not gate the sync the way reconcile does. A
+		// stranger slipping past the cursor is a correctness failure, so
+		// reconcile failing means 503; a Spam-folder listing that hiccups after
+		// INBOX listed fine is rare and self-heals on the next sync or the
+		// 15-minute ticker (§5.1). Losing a letter from family over it would
+		// trade a bounded delay for a worse failure — the §4.7 reasoning.
+		if _, err := h.deps.Reconciler.CheckSpam(ctx); err != nil {
+			h.deps.Logger.Error("sync: spam backstop sweep failed", "error", err)
 		}
 	}
 
