@@ -1,0 +1,25 @@
+# Pinned for reproducible builds.
+#
+# talon is NOT listed here — it's installed separately in the Dockerfile
+# with --no-deps, because its own setup.py pulls in numpy/scipy/scikit-learn
+# (talon.signature's ML classifier, which this service never imports — only
+# talon.quotations, per wasi-server-plan §11.1) and cchardet (see below).
+# Its real runtime requirements for talon.quotations are listed here
+# explicitly instead: lxml, regex, chardet, cssselect, six, html5lib.
+#
+# faust-cchardet stands in for the "cchardet" import talon.utils does
+# unconditionally. The original PyPI "cchardet" package fails to build on
+# Python 3.11+ (it pokes at a CPython internal header, longintrepr.h, that
+# was removed) and is unmaintained upstream; faust-cchardet is the
+# maintained fork the community moved to for exactly this reason, and ships
+# prebuilt wheels so no compiler is needed in the runtime image either.
+faust-cchardet==2.2.1
+lxml==6.1.1
+regex==2026.7.19
+chardet==7.4.3
+cssselect==1.5.0
+six==1.17.0
+html5lib==1.1
+
+flask==3.1.3
+gunicorn==26.0.0

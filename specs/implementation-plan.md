@@ -158,6 +158,39 @@ structs, sample `wasi.toml`/`ayllu.toml`, Makefile, CI-less test targets.
 | 4B | `deploy/`, `cmd/wasi backup`, `contacts` | Distroless static non-root image, read-only rootfs, backup (excluding `kipu/`) + retention, TLS listener wiring and dual-CA tooling notes |
 | 4C | docs | Deployment guide (Fastmail spam-filter disable step, CA ceremony, VPN guidance), guardian docs incl. §7.3's stated limitation |
 
+## 4a. Findings against the spec
+
+Recorded here rather than fixed silently, in the spirit of Appendix A. Both were
+found while implementing §7 and both change behaviour the spec did not pin down.
+
+**F-1 · A readdress would have deleted history. Extends §7.2 and §7.4.**
+§7.1 establishes that in a read-time architecture the contact row is the rendering
+key for every letter a person ever sent, and I-5 answers it for *removal*. It does
+not answer it for *addresses*. Replacing `Address` on a readdress leaves every
+letter that person sent from the old address unresolvable, so the next
+reconciliation pass (§5.1) sweeps their entire history into `Held`, and a window
+resync after a factory reset loses it — the exact "silently, exactly like spam"
+failure §7.1 exists to prevent, arriving through the one door it left open.
+
+Resolution: `Contact.PastAddresses`, retained forever, consulted by `Resolve`
+(read time) and never by `ResolveActive` (filing and sending). History renders;
+new mail from the old address still goes to `Held`, because a readdress usually
+means the person lost that account and mail from it afterwards is precisely what
+a guardian should review. Re-adding someone at a past address reuses their id, so
+they stay one person in the archive. Covered by `TestReaddress_HistoryStillResolves`
+and an I-2 leak test over the device view.
+
+**F-2 · Reconciliation resolves against the full table; only arrival is
+active-only. Binding interpretation of §5.1.**
+§5.1 says reconciliation quarantines any message "whose sender does not resolve to
+a contact", while arrival filing quarantines anything not resolving to an *active*
+contact. Read as active-only, reconciliation would sweep a deactivated contact's
+already-delivered letters into `Held` on the next pass — which V-6 explicitly
+forbids ("first two render with the name, third in `Held`"). §7.2 settles it: "the
+decision is made once, at arrival; history is immutable." So reconciliation
+quarantines strangers only — senders that do not resolve against the full table,
+tombstones and past addresses included. Wave 2 implements it that way.
+
 ## 5. Risks tracked during the build
 
 - **maddy ≠ Fastmail.** No spam foldering, IDLE and MOVE semantics differ. V-16 injects the

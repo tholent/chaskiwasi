@@ -90,3 +90,70 @@ type Store interface {
 	// atomically, returning only once it is durable.
 	Update(fn func(*State) error) error
 }
+
+// Lookup returns the recorded terminal ack for localID, if this ring has one.
+// A replayed sync uses this to hand back the exact same outcome — including a
+// rejection — rather than reprocessing the letter (§4.7, test V-9).
+//
+// The scan runs newest-first: local_id is meant to be unique per outbound
+// letter, but if a bug ever produced two entries for the same id, the most
+// recent is the one a replay should see.
+func (r *AckRing) Lookup(localID string) (AckEntry, bool) {
+	for i := len(r.Entries) - 1; i >= 0; i-- {
+		if r.Entries[i].LocalID == localID {
+			return r.Entries[i], true
+		}
+	}
+	return AckEntry{}, false
+}
+
+// Record appends a terminal ack, evicting the oldest entry once the ring is
+// at capacity (§4.7). status is a protocol.AckStatus value passed as a plain
+// string, per this package's policy of staying free of a protocol import
+// (see AckEntry's doc comment).
+func (r *AckRing) Record(localID, status string, at time.Time) {
+	r.Entries = append(r.Entries, AckEntry{LocalID: localID, Status: status, At: at})
+	if over := len(r.Entries) - AckRingSize; over > 0 {
+		r.Entries = r.Entries[over:]
+	}
+}
+
+// AddPendingNotice records an ayllu change whose notice letter has not been
+// APPENDed yet (§7.6).
+func (s *State) AddPendingNotice(n PendingNotice) {
+	s.PendingNotices = append(s.PendingNotices, n)
+}
+
+// RemovePendingNotice drops a pending notice once its letter has been
+// APPENDed. It is a no-op if id is not present, which makes it safe to call
+// again after a crash-and-retry of the flush in §7.6 without checking first.
+func (s *State) RemovePendingNotice(id string) {
+	kept := s.PendingNotices[:0]
+	for _, n := range s.PendingNotices {
+		if n.ID != id {
+			kept = append(kept, n)
+		}
+	}
+	s.PendingNotices = kept
+}
+
+// NextPututuCounter increments and returns the counter for a newly sent SMS
+// (§10.2). Counter-based rather than time-based because the device has no
+// clock it can trust except just after a sync (A.8).
+func (s *State) NextPututuCounter() uint64 {
+	s.PututuCounter++
+	return s.PututuCounter
+}
+
+// ReconcilePututuCounter jumps the counter forward if the device reports
+// having already accepted a higher value than the server currently holds —
+// the healing step for a state.json restored from an older backup, which
+// would otherwise roll the counter back and leave every subsequent SMS
+// silently ignored by the device (§10.3, test V-20). It never moves the
+// counter backward: a device report lower than the server's counter is stale
+// or lying, and honouring it would let an SMS be replayed.
+func (s *State) ReconcilePututuCounter(seen uint64) {
+	if seen > s.PututuCounter {
+		s.PututuCounter = seen
+	}
+}

@@ -1,0 +1,114 @@
+# wasi.toml — human-owned configuration for one Wasi container / one Chaski
+# device (wasi-server-plan §13). Bind-mounted read-only into the container
+# and hot-reloaded on change; Wasi never writes this file.
+#
+# This copy is wired to deploy/compose.dev.yml's local stack — maddy as the
+# IMAP/SMTP fixture, the bundled strip service, and the `fake` carrier — so
+# `make up` works with zero hardware and no Fastmail account (§15). For a
+# real deployment, replace the [mail], [services], and [carrier] values with
+# your provider's; every key below is documented against §13's table, so
+# this file also stands alone as the full configuration reference.
+#
+# Secrets do NOT go here. The IMAP password, carrier API key, cookie-signing
+# key, pututu HMAC key, and shared-service bearer token all come from
+# environment variables or mounted secret files (internal/secrets) — see
+# compose.dev.yml's `environment:` blocks for this stack's dev values — so
+# this file (and ayllu.toml alongside it) stay safe to keep in the family's
+# own git repository for version history on the contact list (§3).
+#
+# Keys with a listed default may be omitted; keys with no default are
+# required and Load will refuse to start without them.
+
+[owner]
+# Used only for generated outbound subjects, e.g. "Letter from Maya" (§6.2).
+name = "Maya"
+
+[mail]
+# IMAP/SMTP endpoints. Credentials come from secrets (WASI_IMAP_PASSWORD or
+# WASI_IMAP_PASSWORD_FILE), never from here. In this stack both point at the
+# maddy service on the compose network, over implicit TLS (self-signed —
+# see deploy/README.md for why that's fine here and never appropriate for a
+# real mail provider).
+imap = "maddy:993"
+smtp = "maddy:465"
+# The mailbox's own address: the child's From: on every outbound letter.
+# Matches MADDY_TEST_USER in compose.dev.yml.
+address = "kid@chaski.test"
+# Where mail from strangers and deactivated contacts is quarantined (§5.1).
+# Created by deploy/maddy/init.sh.
+held_folder = "Held"       # default shown
+# Provider-side spam folder, checked as a backstop (§5.1). maddy creates
+# this automatically for every account; maddy itself never files anything
+# there (§5.1's backstop needs injecting directly — see deploy/README.md).
+spam_folder = "Junk"
+
+[device]
+# SHA-256 hex of the device's bearer token. Never the token itself — Wasi
+# stores only the hash, which is why the pututu HMAC needs its own separate
+# secret (§3, §10.2). This is sha256("dev-device-token"), for the compose
+# stack only:
+#   printf '%s' dev-device-token | sha256sum
+token_hash = "7053fe692ce151a1a4e066d93850420b420ce95d823a0c7e8609fddf5272438d"
+# Address:port for the device-sync listener, private-CA TLS (§12.1, §12.2).
+listen = "0.0.0.0:8443"
+tls_cert = "/config/tls/device.crt"
+tls_key = "/config/tls/device.key"
+
+[sync]
+# All limits below are counted in graphemes, never bytes or code points (§0).
+max_letter_chars = 500     # default shown; both directions (§4.6)
+budget_bytes = 2048        # default shown; steady-state response target (§4.6)
+resync_window = 200        # default shown; letters delivered on cursor: "" (§4.4)
+interval_s = 21600         # default shown; pushed to device as sync_interval_s
+
+[ayllu]
+max_contacts = 24          # default shown; includes tombstones (§7.2, A.3)
+
+[kipu]
+retention_days = 14        # default shown; whole day-file deletion (§3, A.6)
+
+[backup]
+dir = "/backups"           # default shown
+retain_days = 7            # default shown; excludes kipu/ (§3)
+
+[pututu]
+coalesce_min = 15          # default shown; minutes between SMS (§10.1)
+
+[guardian]
+# Address:port for the guardian web UI, public (Let's Encrypt) TLS (§12.1).
+# In this stack it's self-signed too (deploy/README.md) — there is no real
+# domain to run ACME DNS-01 against for a local fixture.
+listen = "0.0.0.0:8444"
+tls_cert = "/config/tls/guardian.crt"
+tls_key = "/config/tls/guardian.key"
+# The single documented exception to I-3: optional operational copies of
+# notice letters to guardian addresses fixed here, never child-authored
+# content (§7.5). Empty by default — opt in explicitly.
+copy_addresses = []
+
+[carrier]
+# Selects an SMS provider by name; the sub-table is provider-specific so
+# that per-provider identity (Hologram device id, Soracom IMSI) never leaks
+# into core config or pututu code (§10.4). `fake` records calls in memory —
+# it's what the compose/e2e stack uses so M3 is testable with no live
+# carrier account (§15's own description of the stack).
+name = "fake"
+
+[carrier.options]
+# fake takes no options; a real provider's identity/config goes here, e.g.
+# for hologram: device_id = "123456"
+
+[services]
+# Shared, private-network-only helpers (§11), authenticated with the shared
+# bearer token from secrets (WASI_SERVICE_TOKEN). "strip" is the compose
+# service name on the internal network (deploy/compose.dev.yml).
+strip_url = "http://strip:8080"
+# cell is specified but not built until v2 (§11.2); left pointing at a
+# placeholder so the key is documented even though nothing serves it yet.
+cell_url = "http://cell.internal:8081"
+
+[device_config]
+# Passed through verbatim in the sync response's config block (§4.3). Content
+# knobs only — no layout numbers ever live here (§4.9, A.10).
+rat = "ltem"
+cover = "Chaski"

@@ -29,6 +29,25 @@ type Contact struct {
 	ID      string `toml:"id"`
 	Name    string `toml:"name"`
 	Address string `toml:"address"`
+	// PastAddresses are addresses this contact previously used, retained
+	// forever and consulted only at read time (Resolve, never ResolveActive).
+	//
+	// This exists because I-5 — removal never deletes — has to apply to
+	// addresses, not just rows. In a read-time architecture the address is the
+	// rendering key for every letter a person ever sent, so replacing it on a
+	// readdress would make all of their history stop resolving: on the next
+	// reconciliation pass their old letters would be swept into Held, and after
+	// a factory-reset window resync they would be gone from the device
+	// entirely. That is the "silently, exactly like spam" failure §7.1 exists
+	// to prevent, arriving through the one door §7.1 left open.
+	//
+	// New mail from a past address still goes to Held, because ResolveActive
+	// does not consult this list: a readdress usually means the person lost
+	// access to the old account, and mail from it afterwards is exactly the
+	// case a guardian should look at. History renders; the channel does not
+	// silently reopen.
+	PastAddresses []string `toml:"past_addresses,omitempty"`
+
 	// Active false is a tombstone: history still renders, new mail is Held, and
 	// outbound is rejected (§7.2).
 	Active   bool   `toml:"active"`
