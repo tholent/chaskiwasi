@@ -64,7 +64,21 @@ struct Outcome {
   int rounds = 0;             // drain rounds actually performed
   bool ayllu_updated = false;
   bool config_updated = false;
+
+  // apply_incomplete reports that a durable write failed part-way through the
+  // §5.2 order, so the remaining steps were abandoned and the cursor was
+  // deliberately NOT advanced. Recovery is the same one a power cut takes: the
+  // server re-delivers and the seen-ring absorbs the repeats (C-4). It is not
+  // a Fault because §11.6's fault states are about the road, not the flash.
+  bool apply_incomplete = false;
 };
+
+// NextBackoffMs sentinels (client §5.3). The schedule is 30 s, 2 min, 10 min
+// and then nothing: the next scheduled wake carries the retry, which is what
+// makes the backoff capped rather than a hot loop on a per-MB link. Neither
+// value can collide with a real delay, because the schedule never waits 0 ms.
+inline constexpr int kBackoffNextScheduledWake = 0;
+inline constexpr int kBackoffHalted = -1;  // 401: stop until a key press
 
 // Clock is a seam because the device has no RTC: wall-clock time is valid only
 // after the first sync of a power cycle, and until then dates render blank
