@@ -23,6 +23,10 @@ static const char* const kStrings[STR__COUNT] = {
     [STR_DRAFT_RESUME] = "Keep writing the letter you started?",
     [STR_OUTBOX_FULL] = "The bag is full. Send these first.",
 
+    [STR_DRAFT_CONFLICT_PROMPT] = "You're still writing another letter.",
+    [STR_DRAFT_KEEP_WRITING] = "Keep writing that one",
+    [STR_DRAFT_START_NEW] = "Start a new one instead",
+
     [STR_OUTBOX_TITLE] = "On the road",
     [STR_SEND_FAILED] = "This letter couldn't be sent. Ask your guardians about it.",
 
@@ -33,6 +37,7 @@ static const char* const kStrings[STR__COUNT] = {
 
     [STR_PIN_PROMPT] = "Your number",
     [STR_PIN_WRONG] = "Not quite. Try again.",
+    [STR_PIN_TRY_AGAIN_SOON] = "Wait a moment, then try again.",
 
     [STR_SETTINGS_TITLE] = "Settings",
     [STR_SETTINGS_FONT_SIZE] = "Text size",

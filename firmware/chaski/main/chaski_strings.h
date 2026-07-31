@@ -50,6 +50,12 @@ typedef enum {
   STR_DRAFT_RESUME,
   STR_OUTBOX_FULL,          // the bag is full — sync to send these first (B.9)
 
+  // Draft conflict (client §11.3): one draft slot in v1 — starting a new
+  // letter while one is already in progress asks which to keep.
+  STR_DRAFT_CONFLICT_PROMPT,
+  STR_DRAFT_KEEP_WRITING,
+  STR_DRAFT_START_NEW,
+
   // Outbox / send failure. The device never explains WHICH reject happened:
   // the distinctions exist for guardians, server-side (client §5.4).
   STR_OUTBOX_TITLE,
@@ -64,6 +70,7 @@ typedef enum {
   // PIN (client §11.5).
   STR_PIN_PROMPT,
   STR_PIN_WRONG,
+  STR_PIN_TRY_AGAIN_SOON,   // shown during the doubling backoff (client §11.5)
 
   // Settings, including the transparency log (design §3.7).
   STR_SETTINGS_TITLE,
