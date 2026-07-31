@@ -7,3 +7,10 @@
 __pycache__/
 *.pyc
 chaskisim-state.json
+
+# Firmware build trees
+/build/
+firmware/chaski/build/
+firmware/chaski/sdkconfig
+firmware/chaski/sdkconfig.old
+firmware/chaski/managed_components/

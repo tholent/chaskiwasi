@@ -1,0 +1,1 @@
+chaski_add_test(syncengine_test syncengine_test.cpp chaski_syncengine)

@@ -1,0 +1,48 @@
+{
+  "server_time": 1785420202,
+  "cursor": "b64cursorDDDD",
+  "pututu_counter": 41,
+  "letters": [
+    {
+      "id": "l-9f3a2c41d0",
+      "contact_id": "c_07",
+      "subject": "camping",
+      "date": 1785349200,
+      "body": "We went up to the lake on Saturday.",
+      "trimmed": true,
+      "truncated": false,
+      "degraded": false
+    },
+    {
+      "id": "l-1122334455",
+      "contact_id": "c_02",
+      "subject": "long one",
+      "date": 1785349900,
+      "body": "This letter was cut at the cap.",
+      "trimmed": false,
+      "truncated": true,
+      "degraded": false
+    },
+    {
+      "id": "l-aabbccddee",
+      "contact_id": "c_sys",
+      "subject": "Your list changed",
+      "date": 1785350000,
+      "body": "Rosa was removed from your list. You can still read her old letters.",
+      "trimmed": false,
+      "truncated": false,
+      "degraded": false
+    },
+    {
+      "id": "l-5566778899",
+      "contact_id": "c_03",
+      "subject": "degraded",
+      "date": 1785350100,
+      "body": "Strip was down when this was derived.",
+      "trimmed": false,
+      "truncated": false,
+      "degraded": true
+    }
+  ],
+  "more": false
+}

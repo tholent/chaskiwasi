@@ -1,0 +1,32 @@
+{
+  "server_time": 1785420300,
+  "cursor": "b64cursorEEEE",
+  "pututu_counter": 0,
+  "acks": [
+    {
+      "local_id": "o-000001",
+      "status": "sent"
+    },
+    {
+      "local_id": "o-000002",
+      "status": "rejected_inactive"
+    },
+    {
+      "local_id": "o-000003",
+      "status": "rejected_unknown_contact"
+    },
+    {
+      "local_id": "o-000004",
+      "status": "invalid"
+    },
+    {
+      "local_id": "o-000005",
+      "status": "rejected_undeliverable"
+    },
+    {
+      "local_id": "o-000006",
+      "status": "some_future_status"
+    }
+  ],
+  "more": false
+}

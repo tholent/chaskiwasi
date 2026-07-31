@@ -1,0 +1,302 @@
+# Chaski Firmware — Implementation Plan
+
+Derived from `specs/chaski-client.spec.md` (authoritative for firmware) and
+`specs/wasi-server-plan.md` (authoritative for the wire). The design spec is
+context. This plan is the contract subagents code against; section references
+(§5.2, D-1, C-9, B.13…) point at the client spec unless prefixed
+**server §** or **design §**.
+
+Companion: `specs/implementation-plan.md` is the server-side equivalent and
+sets the conventions this document reuses (citation comments, V/C-table test
+naming, wave structure, findings log).
+
+---
+
+## 0. Ground rules for every task
+
+1. **The spec is the requirements doc.** Every exported symbol implementing a
+   numbered clause carries a citation comment (`// §5.2: cursor is written
+   last.`, `// D-5: acks are terminal.`), same style as the Go tree.
+2. **Invariants D-1…D-7 are testable, not aspirational.** Code that could put
+   letter content in a log, an address anywhere, a radio symbol in the ELF, or
+   a UI string outside `chaski_strings.c` is a defect, not a style issue.
+3. **Seams stay pure.** Components under `components/` that implement logic
+   (syncengine, layout, store, pututu, wipe controller) include **no `esp_*`
+   or `freertos/*` headers** — hardware reaches them only through the §3 seam
+   interfaces. This is what makes the host test tier exist at all.
+4. **Content-free logging from day one, in every build** (D-7). The C-19 log
+   grep runs on every bench session, not once at CM4. Log letter ids and local
+   ids; never bodies, subjects, or names.
+5. **Vocabulary boundary:** `pututu`/`ayllu`/`kipu` may appear in identifiers,
+   comments, and wire field names — never in `chaski_strings.c` (§0, C-15).
+6. **Numbered tests carry their number:** `TestC<n>_<Name>` (host tests in
+   GoogleTest use `TEST(C<n>, Name)`), so the §15 table maps to the suite
+   mechanically.
+7. **File ownership is disjoint within a wave.** The seam headers exist before
+   wave 1; nobody edits another agent's component. Bench time is the one
+   shared resource — see §4's bench discipline note.
+8. **No irreversible fuses before CM4.** Dev boards run development-mode flash
+   encryption and no secure boot until the ceremony; the provisioning tool
+   refuses release fuses outside it.
+
+## 1. Toolchain and dependencies
+
+| | |
+|---|---|
+| Framework | **ESP-IDF, newest LTS at CM0** — exact version pinned in `firmware/chaski/README` at scaffold time and treated as frozen; upgrades are deliberate, bench-tested acts (§3) |
+| Target | `esp32s3` (Walter: ESP32-S3-WROOM-1-N16R2) |
+| Language | C++ (no exceptions, no RTTI) for seams/state machines; C elsewhere; IDF idiom throughout |
+| Modem | `dptechnics/walter-modem` ESP-IDF component (GM02SP: PDP, PSM, TLS profiles, HTTP, SMS). Wrapped, never called directly outside `components/modem/` |
+| Graphemes | **utf8proc**, vendored; its Unicode version and `rivo/uniseg`'s recorded side by side in the README (C-9 is the referee, B.7) |
+| Letter store | `joltwallet/littlefs` component on a dedicated partition |
+| JSON | cJSON (ships with IDF) — 2 KB payloads, no schema machinery |
+| Host tests | Plain CMake + **GoogleTest**, host-only; possible because of ground rule 3 — logic components build on Linux with no IDF installed |
+| Bench harness | Go (`test/firmware/bench`, build tag `bench`), reusing `deploy/compose.dev.yml` + maddy and embedding `chaskibridge` as a library |
+| Host tools | Go 1.26.5 (existing toolchain): `chaskibridge`, `graphvectors`, `fwgates`, provisioning tool |
+| Flashing | `idf.py flash` for development; ESP Web Tools page (CM4) for guardians |
+
+**Makefile integration:** `make check` (the repo gate) grows two cheap,
+IDF-free additions — the firmware **host tests** (CMake+GoogleTest) and the
+**strings/vocabulary gates**. Everything needing the cross-toolchain or a
+built ELF (firmware build, symbol scan, bench suite) lives behind
+`make fw-check`, so server-side work never acquires an IDF dependency.
+
+## 2. Repository layout
+
+Extends the spec §3.1 sketch with the test tree:
+
+```
+firmware/chaski/
+  README                     pinned IDF version, utf8proc/uniseg Unicode versions
+  partitions.csv             factory app + littlefs + nvs + factory-nvs (no OTA slots — design §6.5)
+  sdkconfig.defaults         prod baseline; sdkconfig.dev adds USB bridge + verbose logs
+  main/                      app_main, wake dispatch, strings.c (ALL user-visible text)
+  components/
+    transport/               seam + usbbridge impl (dev)      §14
+    modem/                   walter-modem wrapper + modem transport impl (prod)  §5.3, §6
+    syncengine/              request assembly, §5.2 apply order, backoff, acks
+    store/                   letterstore, outbox, seenring, statestore (atomic writes)  §4
+    ayllu/                   snapshot + device-local cosmetic overlay  §4.4
+    pututu/                  token verify, counter (NVS), rate limit  §7
+    panel/                   seam + ssd1680 impl + recording fake  §8.1, §9
+    layout/                  utf8proc line-break, pagination, fonts  §8.2
+    input/                   seam + keebdeck-i2c impl; put-away/sync interception  §10
+    ui/                      screens, flows, PIN, cover, drafts  §11
+    kipu/                    tier-1 block + readable log ring  §13
+    power/                   fuel-gauge seam (MAX17048 impl + fake), ALRT wiring, wipe controller  §9, §9.1
+  docs/bringup.md            pins, board profiles, panel timings, measurement log
+tools/chaskibridge/          Go: USB-CDC ⇄ Wasi proxy (cmd + importable lib)  §14
+tools/graphvectors/          Go: grapheme vectors from rivo/uniseg  (C-9, B.7)
+tools/fwgates/               Go: ELF radio-symbol scan, chaski_strings.c scan, UI-literal lint  (C-15, C-16)
+tools/provision/             Go: factory NVS image generation, fuse-state checks  §12 (CM4)
+test/firmware/
+  host/                      CMake + GoogleTest tree, one dir per component
+  host/testdata/             grapheme vectors, wire fixtures (generated, committed)
+  bench/                     Go bench suite (build tag `bench`) + run-log convention
+```
+
+**Wire fixtures:** a `go:generate` step in `internal/protocol` emits canonical
+request/response JSON (every field, every ack status, worst-case emoji bodies)
+into `test/firmware/host/testdata/wire/`. The firmware's mirrored structs
+parse and re-emit them in host tests — the struct mirror can drift only by
+failing a test, not silently. Regenerating fixtures is part of any wire
+change, which keeps the server the single writer of the wire's shape.
+
+## 3. Key seams (defined in the scaffold, before any parallel work)
+
+Sketches, not final signatures — the scaffold freezes the real headers.
+
+```cpp
+// components/transport — the entire network surface (§14)
+struct SyncResponse { int http_status; bool transport_ok; bool tls_trust_failed;
+                      std::string_view body; };
+struct Transport { virtual SyncResponse Sync(std::string_view request_json) = 0; };
+// impls: ModemTransport (prod, pinned CAs), UsbBridgeTransport (dev)
+
+// components/panel — everything the product needs, nothing more (§8.1)
+struct Panel {
+  virtual void PartialRefresh(Rect, const Framebuf&) = 0;
+  virtual void FastRefresh(const Framebuf&) = 0;
+  virtual void FullRefresh(const Framebuf&) = 0;
+  virtual void ClearFlush(int passes) = 0;   // §9 step 1 / §9.1 step 4
+  virtual void WaitBusy() = 0;               // §9.1: never abort a waveform
+  virtual void DeepSleep() = 0;
+};
+// impls: Ssd1680 (real), RecordingPanel (host tests: C-10, C-12, C-24)
+
+// components/input — scancodes in, interception below UI dispatch (§10)
+struct InputSource { virtual bool Poll(KeyEvent&) = 0; };  // keebdeck-i2c | matrix (later)
+// the input layer, not the UI, owns put-away and sync scancodes (C-11)
+
+// components/store (§4) — all writes atomic (write-then-rename on LittleFS)
+struct LetterStore { void Put(const Letter&);        // idempotent by id
+                     void EvictBeyond(size_t keep); /* list, get, mark-read */ };
+struct Outbox     { LocalId Add(Draft&&);            // LocalId monotonic, never reused (C-5)
+                    void Resolve(LocalId, AckStatus); /* list */ };
+struct SeenRing   { bool Contains(LetterId); void Add(LetterId); };  // ≥1000 (server §4.5)
+struct StateStore { /* cursor, ayllu_version, local_id high-water — §5.2 step 6 owns cursor */ };
+
+// components/syncengine — §5.2 is the whole contract
+struct SyncEngine { SyncOutcome RunOnce(Trigger);      // assembles, calls Transport,
+                                                        // applies in §5.2 order
+                    /* backoff schedule per §5.3 */ };
+
+// components/power — battery truth + the wipe controller (§9, §9.1)
+struct Gauge { virtual int SocPct() = 0; virtual int MilliVolts() = 0;
+               virtual void ArmUndervoltAlert(int mv, Callback) = 0; };  // MAX17048 | fake
+struct WipeController { void GracefulWipe(CoverKind);   // §9 seven steps
+                        void EmergencyWipe(); };        // §9.1 eight steps (C-24)
+
+// components/modem — the only walter-modem caller
+struct Modem { /* attach/PSM mgmt, HTTPS via TLS profile, SMS drain,
+                  RAT set (§5.5), TrustStoreSync (§12) */ };
+```
+
+`main/` owns the wake dispatch and composition root: it reads the wake reason,
+wires seams to implementations per build variant, and calls exactly one of
+{UI session, background sync, SMS poll} (§6).
+
+## 4. Execution waves
+
+Up to 3 `coder` subagents per wave, disjoint file ownership, seam headers
+frozen in wave 0. Each wave ends with its gate before the next begins.
+
+**Bench discipline:** there is one Walter on the bench. Host tests and builds
+parallelise freely; anything needing the device serialises through a single
+integration slot at the end of the wave. Bench runs append a line to
+`test/firmware/bench/RUNLOG.md` (date, firmware sha, suite result) — the bench
+analog of CI history, since CI has no hardware.
+
+### Wave 0 — scaffold (serial, no subagents) → CM0
+
+IDF project skeleton building for `esp32s3` and pinned; `partitions.csv`;
+seam headers with doc comments (§3); `chaski_strings.c` skeleton; wire structs
+mirrored from `internal/protocol` + the fixture `go:generate`;
+`tools/graphvectors` and `tools/fwgates` (both runnable, gates green on the
+skeleton); `tools/chaskibridge` skeleton; host-test CMake tree with one
+passing test per component; `make check` / `make fw-check` split (§1);
+`docs/bringup.md` opened with the board profile for the bare Walter.
+
+### Wave 1 — the logic core, host-only → CM1 part 1
+
+| Agent | Owns | Delivers |
+|---|---|---|
+| 1A | `store/`, `ayllu/` | Atomic write-then-rename on a filesystem seam (host: tmpdir; target: LittleFS); letter store idempotent by id + eviction (B.8); outbox with monotonic never-reused `LocalId` (C-5); seen-ring ≥1000 (C-2 logic); state store; ayllu snapshot replace + cosmetic overlay merge (§4.4, C-13/C-14 data side) |
+| 1B | `syncengine/` + wire structs | Request assembly (§5.1); **§5.2 apply order with a fault-injection hook at every step** (C-4 logic); terminal acks + couldn't-send preservation (C-3); backoff table (§5.3); `more` cap (C-6); clock validity (C-21); wire fixtures round-trip |
+| 1C | `layout/`, `chaski_strings.c`, gates | utf8proc integration; grapheme line-breaker + paginator over vectors from `graphvectors` — ZWJ emoji, combining marks, flags (C-9); font plumbing for two sizes; strings table filled for §11's flows; `fwgates` lint wired into `make check` (C-15) |
+
+**Gate:** all wave-1 host tests green with no IDF installed; C-9 vectors
+committed; `make check` runs them.
+
+### Wave 2 — the bench letter path → CM1 complete
+
+| Agent | Owns | Delivers |
+|---|---|---|
+| 2A | `transport/` (usbbridge), `tools/chaskibridge`, bench harness | Framed USB-CDC protocol both ends; bridge passes bearer header untouched (§14); Go bench suite booting compose stack + driving the device; C-1 end to end; C-2/C-4 bench halves (power-cut via scripted reset at each §5.2 step); C-7's 401/503 cases |
+| 2B | `pututu/`, `kipu/` | Token parse/MAC verify/monotonic counter in NVS/rate limit, all behind a clock+NVS seam so C-8's host half runs without a modem (§7); tier-1 kipu block ≤512 B + readable log ring (§13) |
+| 2C | `main/` wake dispatch, `power/` (fake gauge), sleep skeleton | Composition root per build variant; wake-reason dispatch (§6); deep-sleep enter/exit with RTC bookkeeping on the bare Walter; timer wake loop with logged (content-free) transitions; fake gauge driving the graceful-wipe *state* logic (no panel yet) |
+
+**Gate:** dev-build firmware on the bare Walter completes C-1 against the
+compose stack through the bridge; first `RUNLOG.md` entry; C-19 grep clean on
+that session's captured serial output.
+
+### Wave 3 — face and hands → CM2
+
+| Agent | Owns | Delivers |
+|---|---|---|
+| 3A | `panel/` | Ssd1680 driver (partial/fast/full/clear-flush/busy/deep-sleep) against the reference panel; RecordingPanel; WipeController: §9 seven-step order and §9.1 emergency path incl. modem-off-first and VBUS-only wake; C-10, C-24 sequence half; ghosting measurement procedure written into `bringup.md` (design §11 — privacy test) |
+| 3B | `input/` | KeebDeck Basic I2C source; interception layer below UI dispatch for put-away + sync; watchdog expiry path that wipes (§10); C-11 |
+| 3C | `ui/` | Inbox/read/compose/outbox/settings/fault-state screens (§11); draft autosave + resume (C-17); PIN screen, backoff, config-push enable/clear (C-18); cover renderer incl. charge-me and mail-flag (C-12); tombstone/`c_sys` rules (C-13) |
+
+**Gate:** the in-hand demo — pick Rosa, type, put-away mid-compose, wake,
+resume draft, sync, read the reply — on real hardware; CM2's C-list green
+(C-10…C-13, C-15, C-17, C-18, C-24 sequence half); C-19 grep on the session.
+
+### Wave 4 — the road → CM3
+
+Hardware-bound: agents own disjoint components, but every integration step
+serialises through the bench slot. The pre-CM3 verify-with-vendor list
+(§16 — TLS profile mechanics, PSM timer survival, RING line, VALRT behaviour)
+is a **blocking input** to this wave, not a parallel task.
+
+| Agent | Owns | Delivers |
+|---|---|---|
+| 4A | `modem/`, `transport/` (ModemTransport) | walter-modem wrapper; TLS profile with the two pinned CAs + TrustStoreSync at boot (§12, D-6); HTTPS sync over LTE-M; RAT push (§5.5); distinct can't-reach-home on trust failure (C-7 TLS case) |
+| 4B | PSM + pututu integration | PSM/TAU configuration and hold-across-sleep (§6); timer-wake SMS drain → pututu verify → sync; counter-heal against a restored dev Wasi (C-8 bench, server V-20's mirror) |
+| 4C | `power/` (real gauge), power discipline | MAX17048 driver + ALRT ISR → EmergencyWipe (C-24 live); refresh batching + light-sleep-between-keystrokes in compose (§8.3); PPK2 measurement scripts and first C-20 numbers into `bringup.md`, incl. the §9.1 cold-battery sag run |
+
+**Gate:** live end-to-end on Hologram: letter out via LTE-M, pututu SMS rings
+the device, reply arrives within the coalescing window; measured sleep floor
+and wake costs recorded; C-7, C-8, C-22 green.
+
+### Wave 5 — hardening → CM4
+
+| Agent | Owns | Delivers |
+|---|---|---|
+| 5A | `tools/provision/`, fuse ceremony | Factory NVS image (token, pututu key, URL); dev/release fuse-state checks (refuses release fuses outside the ceremony, ground rule 8); ceremony doc joining the CA ceremony in `docs/`; C-23 |
+| 5B | Release pipeline + full sweep | Signed release build; secure boot v2 + flash encryption on a sacrificial board first; automated C-19 grep over a full bench run; C-16 on both variant ELFs; the complete C-table wired into `make fw-check` (bench rows as the scripted checklist) |
+| 5C | ESP Web Tools flow | The guardian flashing page — **served by Wasi**, so this task touches `internal/web/` and follows the server repo's rules (V-14 vocabulary boundary included); tested end to end with a non-technical user per design §11 |
+
+**Gate:** full C-table pass recorded in `RUNLOG.md` against a release-signed
+build; a factory-fresh device provisioned, flashed via the Web Tools page, and
+syncing over LTE with no developer tooling touched.
+
+## 4a. Findings against the spec
+
+Discrepancies found while implementing, recorded here as F-C1, F-C2… in the
+manner of the server plan's §4a — described, resolved-or-deferred, and folded
+back into `chaski-client.spec.md` as Appendix B entries once decided. Both
+prior specs show this section earns its keep (the server build logged nine).
+
+**F-C1 · ESP-IDF has no "LTS" designation. RESOLVED — pinned v5.5.5.**
+§1 called for "the newest LTS at CM0". No such label exists: Espressif supports
+each minor release for 30 months, with no release singled out for longer.
+The pin was therefore chosen on different grounds and recorded in
+`firmware/chaski/README.md`: **v5.5.5**, newest patch of the newest 5.x line.
+v6.0 is newer but ahead of the vendor ecosystem — `dptechnics/walter-modem`
+v1.5.0 targets 5.x, and the modem driver is not a component to be adventurous
+with. Read §1's "newest LTS" as "newest release with long remaining support
+that the vendor driver targets".
+
+**F-C2 · A header named `strings.h` shadows POSIX `<strings.h>`. RESOLVED —
+renamed `chaski_strings.h`.**
+Found by building the Wave 0 scaffold, not by review. Both the spec (§0) and
+this plan (§2) named the strings table `strings.c`/`strings.h`; with
+`firmware/chaski/main/` on the include path, `#include <strings.h>` resolves to
+ours, so any translation unit reaching for `strcasecmp` fails to compile —
+GoogleTest does, which broke the entire host test tier at once. The `.c` and
+`.h` are now `chaski_strings.*`; spec and plan references were updated in the
+same change. Worth recording because the failure is remote from its cause: the
+error surfaces inside gtest internals, naming neither our file nor our include
+path.
+
+## 5. Risks tracked during the build
+
+- **walter-modem library fit is the big unknown.** The plan assumes it exposes
+  TLS-profile management with custom CAs, HTTP POST through the modem stack,
+  PSM control, and SMS drain. Any gap becomes AT commands in `modem/` —
+  contained by ground rule 3's wrapper, but budget for it. The Wave-4
+  verify-with-vendor items exist to surface this before code depends on it.
+- **Unicode version skew** between utf8proc and `rivo/uniseg` shows up exactly
+  at grapheme boundaries — C-9's generated vectors are the tripwire; both
+  versions are pinned and recorded (B.7). Regenerate vectors on either bump.
+- **Flash-encryption interplay** (LittleFS on an encrypted partition, NVS
+  encryption keys) is exercised in **development mode from Wave 3**, not
+  discovered at CM4. Release-mode fuses only ever burn in the ceremony, on a
+  sacrificial board first.
+- **KeebDeck Basic I2C protocol** may need its alternate firmware flashed
+  before it speaks I2C; treat keyboard bring-up as part of Wave 3's 3B
+  estimate, not a surprise.
+- **Panel waveform timing** is copied from GxEPD2's SSD1680 support as
+  reference (B.1) but verified against the actual -FL02 panel; the ghosting
+  pass-count is a measured privacy parameter, not a constant to trust.
+- **Bench tests are not CI.** They need a human and a device. The mitigations
+  are structural: the host tier carries every assertion it can (ground rule
+  3), and `RUNLOG.md` makes bench coverage visible and dated instead of
+  assumed.
+- **PSM/eDRX timers are requested, not guaranteed** (design §11) — if the
+  carrier mangles them, the power budget's idle line moves; PPK2 numbers in
+  Wave 4 are the early warning.
+- **Single-device serialisation** makes Wave 4 the schedule risk; Waves 1–3
+  front-load everything host-testable precisely so the bench-bound tail is
+  short.

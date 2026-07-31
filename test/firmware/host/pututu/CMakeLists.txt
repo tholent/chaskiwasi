@@ -1,0 +1,1 @@
+chaski_add_test(pututu_test pututu_test.cpp chaski_pututu)

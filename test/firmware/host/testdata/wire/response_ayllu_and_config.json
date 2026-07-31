@@ -1,0 +1,41 @@
+{
+  "server_time": 1785420400,
+  "cursor": "b64cursorFFFF",
+  "pututu_counter": 0,
+  "more": false,
+  "ayllu": {
+    "version": 8,
+    "contacts": [
+      {
+        "id": "c_02",
+        "name": "Abuela",
+        "active": true,
+        "pinned": true,
+        "order": 0,
+        "portrait": "p01"
+      },
+      {
+        "id": "c_07",
+        "name": "Rosa",
+        "active": false,
+        "pinned": false,
+        "order": 3,
+        "portrait": "p04"
+      },
+      {
+        "id": "c_sys",
+        "name": "Wasi",
+        "active": false,
+        "pinned": false,
+        "order": 99,
+        "portrait": ""
+      }
+    ]
+  },
+  "config": {
+    "max_letter_chars": 500,
+    "sync_interval_s": 21600,
+    "rat": "ltem",
+    "cover": "road"
+  }
+}

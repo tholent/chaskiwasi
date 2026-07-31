@@ -1,0 +1,17 @@
+# Chaski partition table.
+#
+# NO OTA SLOTS, deliberately: firmware updates are physical, over USB-C, and
+# there is no over-the-air path at all (design §6.5, client §1.1). That removes
+# the OTA state machine, the rollback partitions, and the interrupted-update
+# brick risk — and it is what makes the remote code-execution surface zero for
+# a device carried by a vulnerable young person.
+#
+# nvs        — encrypted: device token, doorbell key, sync URL, PIN (§4.2)
+# factory    — the signed application image
+# letters    — LittleFS: letter store, outbox, draft, state, contacts (§4.1)
+#
+# Name,     Type, SubType,  Offset,   Size,     Flags
+nvs,        data, nvs,      0x9000,   0x6000,
+phy_init,   data, phy,      0xf000,   0x1000,
+factory,    app,  factory,  0x10000,  0x300000,
+letters,    data, spiffs,   0x310000, 0xC00000, encrypted

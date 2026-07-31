@@ -1,0 +1,1 @@
+chaski_add_test(strings_test strings_test.cpp chaski_strings)

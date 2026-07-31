@@ -1,0 +1,18 @@
+{
+  "server_time": 1785420500,
+  "cursor": "b64cursorGGGG",
+  "pututu_counter": 0,
+  "letters": [
+    {
+      "id": "l-0011223344",
+      "contact_id": "c_02",
+      "subject": "one of many",
+      "date": 1785350200,
+      "body": "first",
+      "trimmed": false,
+      "truncated": false,
+      "degraded": false
+    }
+  ],
+  "more": true
+}

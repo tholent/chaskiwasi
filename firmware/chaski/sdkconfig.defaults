@@ -1,0 +1,41 @@
+# Production baseline. See sdkconfig.dev for the development overlay.
+
+CONFIG_IDF_TARGET="esp32s3"
+
+# Walter carries 16MB flash and 2MB PSRAM (design §5.1).
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_QUAD=y
+
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# Sleep path (design §6.4): image verification on every wake is pure waste when
+# the device reboots dozens of times a day, and ROM logging costs energy for
+# output nobody reads.
+CONFIG_BOOTLOADER_SKIP_VALIDATE_IN_DEEP_SLEEP=y
+CONFIG_BOOTLOADER_LOG_LEVEL_NONE=y
+CONFIG_BOOTLOADER_LOG_LEVEL=0
+CONFIG_ESP_CONSOLE_NONE=y
+
+# D-7: no letter content in any log at any level. ERROR-only in production is
+# the second line of defence; the first is that no call site logs content.
+CONFIG_LOG_DEFAULT_LEVEL_ERROR=y
+CONFIG_LOG_MAXIMUM_LEVEL_ERROR=y
+
+# D-3: exactly one radio path. WiFi and BLE are not compiled in, in ANY build —
+# the dev transport is USB, not a radio (client B.2). C-16 scans the linked ELF
+# to assert this holds.
+CONFIG_ESP_WIFI_ENABLED=n
+CONFIG_BT_ENABLED=n
+
+# D-4: this device will get lost. Encryption at rest is nearly free on S3.
+# Release-mode fuses burn only in the CM4 ceremony, never in a build.
+CONFIG_SECURE_FLASH_ENC_ENABLED=y
+CONFIG_SECURE_FLASH_ENCRYPTION_MODE_DEVELOPMENT=y
+CONFIG_NVS_ENCRYPTION=y
+
+CONFIG_COMPILER_CXX_EXCEPTIONS=n
+CONFIG_COMPILER_CXX_RTTI=n
+
+CONFIG_ESP_TASK_WDT_INIT=y

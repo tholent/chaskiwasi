@@ -1,0 +1,26 @@
+{
+  "cursor": "b64cursorBBBB",
+  "ayllu_version": 8,
+  "pututu_counter_seen": 41,
+  "kipu": {
+    "battery_pct": 84,
+    "charging": false,
+    "fw": "0.1.0",
+    "queue_depth": 2,
+    "rat": "ltem",
+    "rssi": -97
+  },
+  "outbound": [
+    {
+      "local_id": "o-000123",
+      "contact_id": "c_07",
+      "subject": "camping!",
+      "body": "we went to the lake"
+    },
+    {
+      "local_id": "o-000124",
+      "contact_id": "c_02",
+      "body": "no subject on this one"
+    }
+  ]
+}

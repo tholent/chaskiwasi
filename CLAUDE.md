@@ -9,8 +9,10 @@ anywhere and every state file is singular.
 | File | Standing |
 |---|---|
 | `specs/wasi-server-plan.md` | **Authoritative** for the server. Supersedes the design spec wherever they conflict; Appendix A records each supersession. |
+| `specs/chaski-client.spec.md` | **Authoritative** for the device firmware. The wire contract stays in the server plan (§4, §10, §12); Appendix B records client decisions and design-spec supersessions. |
 | `specs/chaskiwasi-design-spec.md` | Context: hardware, device UX, principles. Superseded on threading (A.1), pagination (A.10), storage (A.9). |
-| `specs/implementation-plan.md` | Build order, package ownership, dependency choices. |
+| `specs/implementation-plan.md` | Server build order, package ownership, dependency choices. |
+| `specs/chaski-implementation-plan.md` | Firmware build order: waves mapped to CM0–CM4, seams, host/bench test split, risks. |
 
 Cite clauses in code comments the way the existing files do (`// §4.7: ...`,
 `// I-2: ...`). The section numbers are the requirements ids.

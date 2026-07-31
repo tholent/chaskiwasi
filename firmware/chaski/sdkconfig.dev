@@ -1,0 +1,15 @@
+# Development overlay: USB bridge transport and verbose logging.
+#
+# What this does NOT do is add a radio. WiFi and BLE stay uncompiled here
+# exactly as in production (client B.2) — the dev/prod difference is USB
+# framing and log level, so a variant mix-up cannot violate D-3.
+#
+# Logging is verbose but still content-free: C-19 greps THIS build's serial
+# output, because the dev build is the one attached to terminals that scroll
+# past shoulders (client B.11).
+
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_ESP_CONSOLE_NONE=n
+CONFIG_LOG_DEFAULT_LEVEL_DEBUG=y
+CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y
+CONFIG_BOOTLOADER_LOG_LEVEL_WARN=y
