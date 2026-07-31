@@ -333,6 +333,36 @@ TEST(Store, OutboxRefusesBeyondTheCap) {
   EXPECT_EQ(outbox->SendableCount(), chaski::store::kOutboxCap);
 }
 
+// B.9: the cap counts what is waiting for the runner, not what is waiting for
+// the child. A terminally rejected letter is the latter (§5.4) — and since only
+// the child clears one, counting rejects would let a full bag of them lock
+// composing out forever, while telling the child to "sync to send these first"
+// for letters no sync can move.
+TEST(Store, RejectedLettersDoNotConsumeTheBag) {
+  TempRoot root;
+  auto outbox = chaski::store::OpenOutbox(root.path());
+  std::vector<std::string> ids;
+  for (std::size_t i = 0; i < chaski::store::kOutboxCap; ++i) {
+    std::string id;
+    ASSERT_TRUE(outbox->Add("c_rosa", "s", "body", 10, id));
+    ids.push_back(id);
+  }
+  std::string blocked;
+  ASSERT_FALSE(outbox->Add("c_rosa", "s", "body", 10, blocked));
+
+  // Every letter comes back permanently undeliverable. The child's words are
+  // all still on the device, and the bag is empty again.
+  for (const auto& id : ids) {
+    ASSERT_TRUE(outbox->Resolve(id, chaski::wire::AckStatus::kRejectedUndeliverable));
+  }
+  EXPECT_EQ(outbox->SendableCount(), 0u);
+  EXPECT_EQ(outbox->All().size(), chaski::store::kOutboxCap);
+
+  std::string fresh;
+  EXPECT_TRUE(outbox->Add("c_abuela", "s", "a new letter", 20, fresh));
+  EXPECT_FALSE(fresh.empty());
+}
+
 TEST(Store, OutboxEntriesAreOldestFirst) {
   TempRoot root;
   auto outbox = chaski::store::OpenOutbox(root.path());

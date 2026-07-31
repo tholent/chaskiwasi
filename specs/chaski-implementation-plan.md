@@ -258,6 +258,34 @@ v1.5.0 targets 5.x, and the modem driver is not a component to be adventurous
 with. Read §1's "newest LTS" as "newest release with long remaining support
 that the vendor driver targets".
 
+**F-C5 · A full bag of rejected letters would have locked composing out.
+RESOLVED — the cap counts sendable entries only; B.9 amended.**
+B.9 fixed the outbox at 12 but never said whether a terminally rejected letter
+still occupies a slot. The first implementation counted all entries, which is
+the reading that breaks: only the child clears a reject (§5.4), so twelve
+undismissed ones would block composing indefinitely, while the UI told them to
+"sync to send these first" — advice no sync can act on. The cap now counts
+`SendableCount()`, and B.9 records why. Rejected entries keep their text and
+their visibility on the outbox screen; at ~2 KB each they are not a storage
+concern. Raised by agent 1A as a question rather than silently chosen, which is
+how a spec gap should surface.
+
+**F-C6 · `state` is three files, not one.** Client §4.1 lists the cursor, the
+≥1000-id seen ring, and the local-id high-water under a single `state` file.
+They are written on different schedules by objects with different lifetimes,
+and folding a ~12 KB ring into the record rewritten on every cursor advance
+would spend a 12 KB flash write per sync on a device that counts them (design
+§6.4). Split into `state`, `seen`, and `local_id`, single-writer each. The spec
+sentence describes the *contents* of device state correctly; only the file
+count differs, so this is recorded rather than amended.
+
+**F-C7 · `draft` and `settings` have no seam and therefore no Wave 1 owner.**
+Both are named in the client §4.1 storage model, but the scaffold declared no
+API for either, so C-17 (a draft survives timeout, put-away, and power loss)
+cannot be satisfied by Wave 1's components as they stand. Owner: Wave 3 agent
+3C, which owns drafts and settings in the UI — it adds the store-side API when
+it gets there. Recorded so it is a scheduled gap rather than a discovered one.
+
 **F-C3 · The cJSON header has a different path on host and target. RESOLVED —
 one spelling, host include path widened.**
 §1 says cJSON "ships with IDF", and the scaffold README claimed it was "the same

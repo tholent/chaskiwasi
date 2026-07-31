@@ -786,11 +786,22 @@ Principle 5 makes the mailbox canonical and the device a derived view; storing
 to the server's `resync_window` (200) so a factory reset and steady state hold
 the same shape. 16 MB of flash could hold far more; declining to is the point.
 
-**B.9 · Outbox cap is 12.** Server §4.1 sizes its request cap around "a full
-12-letter outbox"; the device adopts the same number as its own cap. At the
-cap, compose still works — finishing a letter parks it as the draft with
-*"the bag is full — sync to send these first"* — because refusing to let a
-kid write is never the right failure.
+**B.9 · Outbox cap is 12, counting letters waiting for the runner.** Server
+§4.1 sizes its request cap around "a full 12-letter outbox"; the device adopts
+the same number as its own cap. At the cap, compose still works — finishing a
+letter parks it as the draft with *"the bag is full — sync to send these
+first"* — because refusing to let a kid write is never the right failure.
+
+**Terminally rejected letters do not count against the cap.** The cap models
+the runner's bag; a rejected letter is not waiting for the runner, it is
+waiting for the child (§5.4). Counting them would turn a stuck state into a
+lockout — only the child clears a reject, so twelve undismissed ones would
+block composing indefinitely — and would make the on-screen explanation false,
+since no amount of syncing moves a rejected letter. Rejected entries are
+retained with their text intact until the child dismisses or recomposes them;
+at ~2 KB each on a 12 MB partition, their accumulation is not a storage
+concern, and the outbox screen makes them visible rather than silent. (Raised
+during the Wave 1 build, where the first implementation counted all entries.)
 
 **B.10 · v1 renders unknown glyphs as a substitution mark, honestly.** Full
 emoji glyph coverage on a 4-grey panel is real work with real flash cost and

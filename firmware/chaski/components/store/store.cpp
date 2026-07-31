@@ -263,7 +263,14 @@ class FileOutbox final : public Outbox {
     // B.9: at the cap the UI parks the child's text as the draft and shows
     // "the bag is full" — refusing to let a kid write is never the right
     // failure, so the refusal happens here and the words survive up there.
-    if (entries_.size() >= kOutboxCap) return false;
+    //
+    // The cap counts SENDABLE entries only. It models the runner's bag: a
+    // terminally rejected letter is not waiting for the runner, it is waiting
+    // for the child (§5.4). Counting rejects would turn a stuck state into a
+    // lockout — twelve undismissed rejects would block composing forever, since
+    // only the child clears them — and would make the on-screen explanation a
+    // lie, because syncing cannot clear a reject.
+    if (SendableCount() >= kOutboxCap) return false;
     const std::uint64_t next = high_water_ + 1;
     if (!fsutil::WriteAtomic(counter_path_, std::to_string(next) + "\n")) return false;
     high_water_ = next;
