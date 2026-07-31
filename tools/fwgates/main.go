@@ -43,6 +43,22 @@ const (
 // whole tree, for these words.
 var internalVocabulary = []string{"pututu", "ayllu", "kipu"}
 
+// notOurSource lists directories the strings gate must not walk.
+//
+// The rule is that C-15 governs text WE write and render. Third-party code
+// carries its own strings — walter-modem's examples, utf8proc's error messages
+// — which are neither our UI nor ours to change, and generated trees are not
+// source at all. A gate that fails on things you cannot fix is a gate people
+// switch off, which costs more than the false positives it catches.
+//
+// Anything vendored under components/ must be listed here when it lands.
+var notOurSource = map[string]bool{
+	"managed_components": true, // IDF component manager's checkout
+	"utf8proc":           true, // vendored; see components/utf8proc/PATCHES.md
+	"build":              true, // generated
+	".git":               true,
+}
+
 // addressShaped is a tripwire for D-2. The device has no code path that should
 // ever produce an email address; finding one in the strings table means a
 // design assumption broke somewhere upstream.
@@ -175,14 +191,7 @@ func strayLiterals() ([]string, error) {
 			return err
 		}
 		if info.IsDir() {
-			// Scan our source only. `managed_components/` is the IDF component
-			// manager's checkout of third-party code (walter-modem and its
-			// examples) and `build/` is generated; neither is our UI and neither
-			// is ours to change. Scanning them made the gate fail on vendor
-			// example code the moment anyone ran a target build — and a gate
-			// that fails on things you cannot fix is a gate people switch off.
-			switch info.Name() {
-			case "managed_components", "build", ".git":
+			if notOurSource[info.Name()] {
 				return filepath.SkipDir
 			}
 			return nil
@@ -256,6 +265,22 @@ func gateSymbols(path string) error {
 
 	var found []string
 	for _, s := range syms {
+		// Skip linker-script address constants.
+		//
+		// Every ESP32-S3 has a WiFi/BT stack burned into its mask ROM, and
+		// esp_rom/esp32s3/ld/esp32s3.rom.ld names those entry points so code
+		// that wants them can call them. They appear in the symbol table as
+		// SHN_ABS, size 0, NOTYPE — addresses, not code, present whether or not
+		// anything references them. We cannot remove them and we never call
+		// them.
+		//
+		// D-3 is about what this firmware LINKS. Linked code has a real section
+		// index; a ROM address does not. Without this distinction the gate
+		// fails on every possible build of this chip, which would have made it
+		// worthless (F-C9).
+		if s.Section == elf.SHN_ABS {
+			continue
+		}
 		for _, p := range radioSymbols {
 			if strings.HasPrefix(s.Name, p) {
 				found = append(found, s.Name)

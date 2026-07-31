@@ -4,7 +4,7 @@
 if(ESP_PLATFORM)
   idf_component_register(SRCS "layout.cpp"
                          INCLUDE_DIRS "include"
-                         REQUIRES )
+                         REQUIRES utf8proc )
 else()
   add_library(chaski_layout STATIC layout.cpp)
   target_include_directories(chaski_layout PUBLIC include)

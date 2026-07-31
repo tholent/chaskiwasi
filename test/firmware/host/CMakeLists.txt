@@ -31,9 +31,10 @@ find_package(GTest REQUIRED)
 include(GoogleTest)
 enable_testing()
 
-# System dependencies the components share with the target build: cJSON (IDF
-# ships it as the `json` component) and utf8proc (vendored on the target).
-# Same headers both sides, so component code is identical.
+# Third-party dependencies, obtained differently on each side but arranged so
+# component sources are identical: cJSON comes from the system package here and
+# from IDF's `json` component on the target, while utf8proc is compiled from
+# vendored source on BOTH (see below).
 find_path(CJSON_INCLUDE_DIR cjson/cJSON.h REQUIRED)
 find_library(CJSON_LIB cjson REQUIRED)
 add_library(cjson INTERFACE)
@@ -47,13 +48,15 @@ target_include_directories(cjson INTERFACE
                            ${CJSON_INCLUDE_DIR} ${CJSON_INCLUDE_DIR}/cjson)
 target_link_libraries(cjson INTERFACE ${CJSON_LIB})
 
-find_path(UTF8PROC_INCLUDE_DIR utf8proc.h REQUIRED)
-find_library(UTF8PROC_LIB utf8proc REQUIRED)
-add_library(utf8proc INTERFACE)
-target_include_directories(utf8proc INTERFACE ${UTF8PROC_INCLUDE_DIR})
-target_link_libraries(utf8proc INTERFACE ${UTF8PROC_LIB})
-
 set(CHASKI_COMPONENTS ${CMAKE_CURRENT_LIST_DIR}/../../../firmware/chaski/components)
+
+# utf8proc is built from the vendored source, NOT from the system package.
+# ESP-IDF ships no utf8proc and the component registry has no port, so the
+# device compiles firmware/chaski/components/utf8proc; if the host linked
+# Debian's build instead, C-9 would validate one implementation while the
+# device ran another — the exact skew B.7 exists to prevent (F-C8).
+add_subdirectory(${CHASKI_COMPONENTS}/utf8proc ${CMAKE_BINARY_DIR}/components/utf8proc)
+
 
 # Every component except modem, which is target-only by design: it wraps the
 # vendor library, and every decision worth testing lives above the transport

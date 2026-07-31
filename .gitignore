@@ -14,3 +14,8 @@ firmware/chaski/build/
 firmware/chaski/sdkconfig
 firmware/chaski/sdkconfig.old
 firmware/chaski/managed_components/
+firmware/chaski/dependencies.lock
+
+# Editor swap files
+*.swp
+*.swo

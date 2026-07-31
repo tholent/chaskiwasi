@@ -54,11 +54,20 @@ path that parses, stores, renders, or logs an address. The wire never carries
 one (I-2); the strings table is scanned for address-shaped text as a tripwire.
 (C-15)
 
-**D-3 · Production firmware contains exactly one radio path.** LTE-M/NB-IoT
-via the GM02SP, driven over UART. WiFi and BLE are not compiled into **any**
-build, dev builds included — the dev transport is USB, not a radio (§14, B.2).
-GNSS is unused in v1 (v2: §17). Verified by scanning the linked ELF for radio
-symbols. (C-16)
+**D-3 · Production firmware links exactly one radio path.** LTE-M/NB-IoT via
+the GM02SP, driven over UART. WiFi and BLE are not compiled into **any** build,
+dev builds included — the dev transport is USB, not a radio (§14, B.2). GNSS is
+unused in v1 (v2: §17). Verified by scanning the linked ELF for radio symbols
+(C-16).
+
+The invariant is about what the firmware **links**, and it has to be, because
+every ESP32-S3 carries a WiFi/BT stack in its mask ROM. The IDF linker script
+names those ROM entry points unconditionally, so `ieee80211_*` and `btdm_*`
+appear as address constants in any build of this chip. They are addresses, not
+code; nothing here references them, and no firmware decision can remove them.
+C-16 therefore ignores absolute linker-script symbols and fails on radio
+symbols that occupy a real section — the difference between a stack that is
+present in silicon and one this firmware would actually execute (F-C9).
 
 **D-4 · Everything persisted is encrypted at rest.** ESP32-S3 flash encryption
 covers the letter store and app image; NVS encryption covers secrets (device

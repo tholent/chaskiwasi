@@ -258,6 +258,39 @@ v1.5.0 targets 5.x, and the modem driver is not a component to be adventurous
 with. Read §1's "newest LTS" as "newest release with long remaining support
 that the vendor driver targets".
 
+**F-C8 · utf8proc was never actually vendored. RESOLVED — vendored 2.8.0 for
+both platforms, with one upstream patch.**
+§1 said "utf8proc, vendored", and the scaffold shipped nothing: the host had
+Debian's `libutf8proc-dev`, so Wave 1 compiled cleanly and nobody noticed until
+the target build, where ESP-IDF ships no utf8proc and the component registry has
+no port. Vendored at `components/utf8proc/` (2.8.0, Unicode 15.0.0, MIT), and
+the **host tier now compiles the same vendored source instead of the system
+package** — otherwise C-9 would validate Debian's build while the device ran a
+different one, which is precisely the two-implementations skew B.7 exists to
+prevent. Version stays in lockstep with the server's `rivo/uniseg` v0.4.7.
+
+One local patch was required and is recorded in `components/utf8proc/PATCHES.md`:
+`last_boundclass` is declared `int*` but used as `utf8proc_int32_t*`. Those are
+the same type on x86-64 (`int32_t` is `int`) and different on xtensa (`long
+int`), so it compiles on the host and fails under IDF's `-Werror=all`. The fix
+is upstream's own, from 2.9.0; it is applied locally rather than by upgrading,
+because 2.9.0 moves to Unicode 15.1.0 and that bump must be paired with the
+server's segmenter, not made to silence a compiler.
+
+**F-C9 · D-3 as literally worded is unachievable on this silicon. RESOLVED —
+C-16 distinguishes linked code from ROM addresses; D-3 reworded.**
+The first C-16 run failed on our own firmware, reporting `ieee80211_*` and
+`btdm_*` symbols. They are real, and they are not ours: every ESP32-S3 has a
+WiFi/BT stack in mask ROM, and `esp32s3.rom.ld` names those entry points in
+every build of the chip. They appear as `SHN_ABS`, size-0, `NOTYPE` symbols —
+addresses, not code — while genuinely linked code (`esp_wifi_init`) was absent,
+which is what MINIMAL_BUILD (F-C4) had already achieved.
+A gate that fails on every possible build of the target is worthless, so C-16
+now skips absolute symbols and fails only on radio symbols occupying a real
+section. Verified both directions: our image passes, a synthesised binary
+defining `esp_wifi_init` still fails. D-3 is reworded from "contains" to
+"links", which is the honest and testable claim.
+
 **F-C5 · A full bag of rejected letters would have locked composing out.
 RESOLVED — the cap counts sendable entries only; B.9 amended.**
 B.9 fixed the outbox at 12 but never said whether a terminally rejected letter
