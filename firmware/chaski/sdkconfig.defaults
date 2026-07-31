@@ -24,9 +24,13 @@ CONFIG_LOG_DEFAULT_LEVEL_ERROR=y
 CONFIG_LOG_MAXIMUM_LEVEL_ERROR=y
 
 # D-3: exactly one radio path. WiFi and BLE are not compiled in, in ANY build —
-# the dev transport is USB, not a radio (client B.2). C-16 scans the linked ELF
-# to assert this holds.
-CONFIG_ESP_WIFI_ENABLED=n
+# the dev transport is USB, not a radio (client B.2).
+#
+# The mechanism is MINIMAL_BUILD in CMakeLists.txt, not these symbols. Setting
+# CONFIG_ESP_WIFI_ENABLED=n here does nothing: it is derived from
+# SOC_WIFI_SUPPORTED and comes back =y regardless (F-C4). BT_ENABLED is genuinely
+# user-settable, so it stays as defence in depth. C-16's ELF symbol scan is the
+# check that actually proves the invariant.
 CONFIG_BT_ENABLED=n
 
 # D-4: this device will get lost. Encryption at rest is nearly free on S3.

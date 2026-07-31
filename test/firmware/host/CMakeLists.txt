@@ -37,7 +37,14 @@ enable_testing()
 find_path(CJSON_INCLUDE_DIR cjson/cJSON.h REQUIRED)
 find_library(CJSON_LIB cjson REQUIRED)
 add_library(cjson INTERFACE)
-target_include_directories(cjson INTERFACE ${CJSON_INCLUDE_DIR})
+# Both spellings are exposed on purpose. Debian ships the header as
+# <cjson/cJSON.h>; ESP-IDF's `json` component exposes it top-level as "cJSON.h".
+# Component code uses the IDF spelling — it is the one that must work on the
+# device — and adding the cjson/ subdirectory here makes that spelling resolve
+# on the host too, so no source file needs an #ifdef to be portable. (F-C3:
+# the target build caught this; the host tier could not have.)
+target_include_directories(cjson INTERFACE
+                           ${CJSON_INCLUDE_DIR} ${CJSON_INCLUDE_DIR}/cjson)
 target_link_libraries(cjson INTERFACE ${CJSON_LIB})
 
 find_path(UTF8PROC_INCLUDE_DIR utf8proc.h REQUIRED)

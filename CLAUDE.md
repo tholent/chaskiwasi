@@ -20,7 +20,22 @@ Cite clauses in code comments the way the existing files do (`// §4.7: ...`,
 ## Toolchain
 
 Go 1.26.5 lives at `~/.local/go` (symlinked into `~/.local/bin`); apt's 1.19 is
-too old for `log/slog`. `make check` (fmt, vet, build, test) is the gate.
+too old for `log/slog`. `make check` is the gate: Go fmt/vet/build/test **plus**
+the firmware host tests and text gates, which need no ESP-IDF.
+
+Firmware (`firmware/chaski/`, ESP-IDF v5.5.5 at `~/esp/esp-idf`):
+
+| Command | Needs |
+|---|---|
+| `make fw-hosttest` | CMake + g++ only — the whole letter path, no hardware |
+| `make fw-gates` | Go only — C-15 vocabulary/address gates, Unicode-skew check |
+| `make fw-build` / `make fw-check` | ESP-IDF (`. ~/esp/esp-idf/export.sh` first) |
+| `make fw-vectors` | regenerates grapheme vectors + wire fixtures after a wire or segmenter change |
+
+The host/target split is load-bearing, not convenience: logic components under
+`firmware/chaski/components/` include **no `esp_*` or FreeRTOS headers**, so
+firmware logic stays testable on any laptop and server work never acquires a
+cross-toolchain dependency.
 
 ## The five invariants, in code terms
 
@@ -49,8 +64,27 @@ too old for `log/slog`. `make check` (fmt, vet, build, test) is the gate.
   (§4.9, A.10).
 - There is no database, and adding one is a spec reversal, not a refactor (A.9).
 
+## Things that look like bugs and are not — firmware side
+
+- The sync response is applied in a fixed order with the **cursor written last**
+  (client §5.2). A crash before that costs a re-delivery the seen-ring absorbs.
+  Reordering to "avoid" the re-delivery trades a duplicate for a lost letter.
+- `EvictBeyond` deletes a letter file but keeps its seen-ring id, so an evicted
+  letter is never re-downloaded. That asymmetry is deliberate.
+- Contact cosmetics never leave the device — the wire has no device→server
+  mutation and the server holds no engagement state (client B.3).
+- The dev build has no WiFi. The USB bridge is the dev transport, so **no**
+  build variant links a second radio (client B.2); `fwgates symbols` enforces it.
+- `main/chaski_strings.h` is not named `strings.h` because that shadows POSIX
+  `<strings.h>` and breaks anything reaching for `strcasecmp` (F-C2).
+
 ## Vocabulary boundary
 
 `pututu`, `ayllu`, and `kipu` are internal identifiers — greppable on purpose.
 They must never appear in `internal/web/templates/` or any outgoing-mail
 rendering path. Test V-14 enforces this.
+
+The same boundary holds on the device: every user-visible word lives in
+`firmware/chaski/main/chaski_strings.c`, those three words may not appear in it,
+and no UI literal may live anywhere else. `make fw-gates` (C-15) enforces both
+halves and fails the build on a violation.

@@ -258,6 +258,37 @@ v1.5.0 targets 5.x, and the modem driver is not a component to be adventurous
 with. Read §1's "newest LTS" as "newest release with long remaining support
 that the vendor driver targets".
 
+**F-C3 · The cJSON header has a different path on host and target. RESOLVED —
+one spelling, host include path widened.**
+§1 says cJSON "ships with IDF", and the scaffold README claimed it was "the same
+header both sides". It is not: Debian's `libcjson-dev` installs
+`<cjson/cJSON.h>`, ESP-IDF's `json` component exposes `"cJSON.h"` at the top
+level. The host tier could not have caught this — it only appears when the
+target build runs, which is the argument for running that build during Wave 0
+rather than at CM3. Resolution: component code uses the IDF spelling (`"cJSON.h"`,
+the one that must work on the device), and `test/firmware/host/CMakeLists.txt`
+adds the `cjson/` subdirectory to the include path so the same spelling resolves
+on the host. No `#ifdef ESP_PLATFORM` in any source file. The `wire` component
+also needed `REQUIRES json` in its `idf_component_register` call — an empty
+REQUIRES compiles fine on the host and fails only on the target.
+
+**F-C4 · `CONFIG_ESP_WIFI_ENABLED=n` does not disable WiFi. RESOLVED —
+`MINIMAL_BUILD`.**
+The Wave 0 `sdkconfig.defaults` set `CONFIG_ESP_WIFI_ENABLED=n` and
+`CONFIG_BT_ENABLED=n` to satisfy D-3. The generated `sdkconfig` came back with
+`CONFIG_ESP_WIFI_ENABLED=y` regardless — the symbol is derived from
+`SOC_WIFI_SUPPORTED`, not freely user-settable — and the build duly compiled
+`esp_wifi` and `wifi_provisioning`. **D-3 says "not compiled in, not merely
+disabled", so a config knob was never going to be the right mechanism.**
+Resolution: `idf_build_set_property(MINIMAL_BUILD ON)` restricts the build to
+`main` and its transitive `REQUIRES`; nothing in this firmware requires a radio
+stack, so none is built. Verified: the component graph dropped from ~130 to 75
+with no `esp_wifi`, `bt`, `wifi_provisioning`, `openthread`, `esp_coex`, or
+`ieee802154` present. `CONFIG_BT_ENABLED=n` stays as defence in depth because
+that symbol *is* settable. C-16's ELF scan remains the check that proves the
+invariant — this finding is precisely why the gate is a symbol scan and not a
+config assertion.
+
 **F-C2 · A header named `strings.h` shadows POSIX `<strings.h>`. RESOLVED —
 renamed `chaski_strings.h`.**
 Found by building the Wave 0 scaffold, not by review. Both the spec (§0) and
