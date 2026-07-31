@@ -1,6 +1,7 @@
 package syncsvc
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -306,14 +307,21 @@ func assertAcks(t *testing.T, got, want []protocol.Ack) {
 	}
 }
 
-// TestV23_PermanentRejectionIsTerminal covers A.11 / F-3: a 5xx from the mail
-// server (a dead recipient address) becomes a terminal reject, so the device
-// stops retrying and surfaces "couldn't send" instead of showing "on the road"
-// forever for a letter that can never land. It must also be idempotent under
-// replay, like every other terminal ack (§4.7, V-9).
+// TestV23_PermanentRejectionIsTerminal covers A.11 / F-3: a permanent refusal
+// of the message (a dead recipient address) becomes a terminal reject, so the
+// device stops retrying and surfaces "couldn't send" instead of showing "on the
+// road" forever for a letter that can never land. It must also be idempotent
+// under replay, like every other terminal ack (§4.7, V-9).
+//
+// The submitter reports permanence as mailbox.ErrUndeliverable rather than
+// handing up a raw 5xx, because only it knows which SMTP phase replied — see
+// TestSMTPSend_PhaseDecidesPermanence for that half, and
+// TestOutbound_AuthFailureDoesNotRejectTheOutbox for why the distinction is
+// load-bearing here.
 func TestV23_PermanentRejectionIsTerminal(t *testing.T) {
 	hn := newHarness(t)
-	hn.sub.err = &smtp.SMTPError{Code: 550, EnhancedCode: smtp.EnhancedCode{5, 1, 1}, Message: "no such user here"}
+	hn.sub.err = fmt.Errorf("mailbox: smtp rcpt to: %w",
+		errors.Join(errors.New("server refused with code 550 (5.1.1)"), mailbox.ErrUndeliverable))
 
 	resp := hn.sync(protocol.Request{
 		Cursor: hn.currentCursor(), AylluVersion: 7,
@@ -340,12 +348,61 @@ func TestV23_PermanentRejectionIsTerminal(t *testing.T) {
 	}
 }
 
+// TestOutbound_AuthFailureDoesNotRejectTheOutbox guards the failure F-3
+// originally introduced: a rotated app password makes the submission server
+// answer 5xx at AUTH for *every* queued letter. Terminally rejecting them would
+// empty the child's outbox — and because rejects are recorded in the ack ring,
+// fixing the password would not bring them back. The letters must stay unacked
+// so they go out once a guardian repairs the config (§4.7, A.11).
+//
+// mailbox never labels an AUTH refusal ErrUndeliverable, so the handler sees a
+// plain error; this asserts the handler then leaves the letter alone.
+func TestOutbound_AuthFailureDoesNotRejectTheOutbox(t *testing.T) {
+	hn := newHarness(t)
+	hn.sub.err = fmt.Errorf("mailbox: smtp auth: %w",
+		&smtp.SMTPError{Code: 535, EnhancedCode: smtp.EnhancedCode{5, 7, 8}, Message: "authentication failed"})
+
+	resp := hn.sync(protocol.Request{
+		Cursor: hn.currentCursor(), AylluVersion: 7,
+		Outbound: []protocol.Outbound{
+			{LocalID: "o-1", ContactID: "c_01", Body: "hello"},
+			{LocalID: "o-2", ContactID: "c_01", Body: "again"},
+		},
+	})
+	if len(resp.Acks) != 0 {
+		t.Fatalf("an auth failure produced acks %+v; it must leave every letter unacked", resp.Acks)
+	}
+	ring := hn.state.Snapshot().Acks
+	for _, id := range []string{"o-1", "o-2"} {
+		if _, replayed := ring.Lookup(id); replayed {
+			t.Fatalf("%s was recorded terminally in the ring after an auth failure", id)
+		}
+	}
+
+	// The guardian fixes the password: the letters must actually go out.
+	hn.sub.err = nil
+	replay := hn.sync(protocol.Request{
+		Cursor: hn.currentCursor(), AylluVersion: 7,
+		Outbound: []protocol.Outbound{
+			{LocalID: "o-1", ContactID: "c_01", Body: "hello"},
+			{LocalID: "o-2", ContactID: "c_01", Body: "again"},
+		},
+	})
+	assertAcks(t, replay.Acks, []protocol.Ack{
+		{LocalID: "o-1", Status: protocol.AckSent},
+		{LocalID: "o-2", Status: protocol.AckSent},
+	})
+	if hn.sub.count() != 2 {
+		t.Fatalf("submitter saw %d sends after recovery, want 2", hn.sub.count())
+	}
+}
+
 // TestOutbound_TransientRejectionIsRetried is the other half of F-3: a 4xx is
 // "try again later", not "never", so it must NOT become terminal — the letter
 // stays unacked and is re-sent, exactly as an unreachable server is.
 func TestOutbound_TransientRejectionIsRetried(t *testing.T) {
 	hn := newHarness(t)
-	hn.sub.err = &smtp.SMTPError{Code: 451, Message: "greylisted, try later"}
+	hn.sub.err = fmt.Errorf("mailbox: smtp rcpt to: %w", errors.New("server refused with code 451"))
 
 	resp := hn.sync(protocol.Request{
 		Cursor: hn.currentCursor(), AylluVersion: 7,

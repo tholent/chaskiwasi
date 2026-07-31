@@ -175,14 +175,20 @@ func (h *Handler) sendOne(ctx context.Context, cfg *config.Config, item outbound
 		return "", err
 	}
 	if err := h.deps.Submitter.Send(ctx, cfg.Mail.Address, []string{contact.Address}, msg); err != nil {
-		// A permanent 5xx rejection (a dead recipient address) is terminal:
-		// retrying it every sync forever would never deliver the letter and
-		// would leave the child watching "on the road" for something that can
-		// never land. Hand back a terminal reject so the device stops and shows
-		// "couldn't send — ask your guardians" (§4.7, A.11). A transient failure
-		// (4xx) or an unreachable server returns an error instead, and the
-		// caller leaves the letter unacked to be retried.
-		if mailbox.IsPermanentReject(err) {
+		// A permanent refusal of this message — a dead recipient address, or a
+		// message the server will never take — is terminal: retrying it every
+		// sync forever would never deliver the letter and would leave the child
+		// watching "on the road" for something that can never land. Hand back a
+		// terminal reject so the device stops and shows "couldn't send — ask
+		// your guardians" (§4.7, A.11).
+		//
+		// Everything else returns an error and leaves the letter unacked to be
+		// retried: a transient 4xx, an unreachable server, and — critically —
+		// a 5xx that refused *us* rather than the letter, such as a rotated app
+		// password failing AUTH. Those arrive as plain errors precisely so a
+		// config fault cannot terminally reject the whole outbox; mailbox owns
+		// that distinction, because only it knows which SMTP phase replied.
+		if errors.Is(err, mailbox.ErrUndeliverable) {
 			return protocol.AckRejectedUndeliverable, nil
 		}
 		return "", err
