@@ -175,6 +175,16 @@ func strayLiterals() ([]string, error) {
 			return err
 		}
 		if info.IsDir() {
+			// Scan our source only. `managed_components/` is the IDF component
+			// manager's checkout of third-party code (walter-modem and its
+			// examples) and `build/` is generated; neither is our UI and neither
+			// is ours to change. Scanning them made the gate fail on vendor
+			// example code the moment anyone ran a target build — and a gate
+			// that fails on things you cannot fix is a gate people switch off.
+			switch info.Name() {
+			case "managed_components", "build", ".git":
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		ext := filepath.Ext(path)
