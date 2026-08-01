@@ -15,6 +15,7 @@
 // so the backstop needs no deep-sleep wake path and costs nothing at idle.
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 
@@ -63,6 +64,21 @@ inline constexpr int kEmergencyMilliVolts = 3300;  // client §9.1, provisional
 inline constexpr int kEmergencyConfirmDelayMs = 250;
 inline constexpr int kEmergencyConfirmMarginMv = 100;
 
+// Gauge polling interval while awake. The gauge samples every ~250 ms in
+// active mode (client §2); reading it faster than that returns the same
+// number over I2C and spends energy to learn nothing.
+inline constexpr std::int64_t kGaugePollIntervalMs = 1000;
+
+// EmergencyOutcome is what ServiceEmergency did. kCancelled is the one
+// confirming re-read of client §9.1 finding recovered voltage; kWiped covers
+// both a confirmed sag and a gauge that could not be read, because doubt
+// resolves toward wiping.
+enum class EmergencyOutcome {
+  kNoAlert,
+  kCancelled,
+  kWiped,
+};
+
 // Monitor polls the gauge during a session for the graceful threshold and owns
 // the armed hardware alert for the emergency one.
 class Monitor {
@@ -72,13 +88,34 @@ class Monitor {
   // BeginSession arms the hardware alert and starts active sampling.
   virtual void BeginSession() = 0;
 
-  // EndSession disarms before sleep.
+  // EndSession disarms before sleep. The alert is armed while AWAKE only
+  // (client §9.1): a sleeping device already ran the wipe, so the backstop has
+  // no deep-sleep wake path and costs nothing at idle (C-24).
   virtual void EndSession() = 0;
 
   // Poll is called from the UI loop; it returns true when the graceful
   // threshold has been crossed and the caller should wipe to the charge-me
   // cover and refuse to open content (client §9).
   virtual bool GracefulThresholdCrossed() = 0;
+
+  // ChargeMeLatched stays true from the crossing until a reading shows the
+  // device charging — "refuse to open content until charging" (client §6, §9).
+  // GracefulThresholdCrossed reports the transition; this reports the state.
+  virtual bool ChargeMeLatched() const = 0;
+
+  // EmergencyPending is set from the gauge's ALRT callback, which runs in
+  // interrupt context and therefore does nothing else (client §9.1).
+  virtual bool EmergencyPending() const = 0;
+
+  // ServiceEmergency runs the §9.1 debounce and, unless it cancels, calls
+  // on_emergency. It must be driven from a high-priority context independent
+  // of UI dispatch: a wedged screen must not be able to swallow it, which is
+  // the same below-the-UI placement put-away gets (client §9.1, §10, C-24).
+  //
+  // Order matters and is the spec's: radio off FIRST (dropping the burst load
+  // lets the pack recover, buying headroom to finish), then at most one
+  // confirming re-read.
+  virtual EmergencyOutcome ServiceEmergency() = 0;
 
   virtual Reading Last() const = 0;
 };
@@ -89,7 +126,28 @@ struct MonitorDeps {
   // EmergencyWipe; it must be safe to invoke from a high-priority context
   // independent of UI dispatch (client §9.1, C-24).
   std::function<void()> on_emergency;
-  std::function<int()> monotonic_ms;
+
+  // radio_off drops the modem before the confirming re-read — step 2 of the
+  // §9.1 sequence, hoisted here because the re-read is only meaningful with
+  // the burst load gone. The wipe controller powers the radio down again;
+  // PowerDownRadio is idempotent, and a doubled call is cheaper than a
+  // confirmation taken under a transmit sag.
+  std::function<void()> radio_off;
+
+  // delay_ms blocks for the confirming re-read's ~250 ms (vTaskDelay on the
+  // target, a fake clock advance in host tests). When it is null there is no
+  // confirmation and the wipe runs immediately, which is the conservative
+  // direction (client §9.1).
+  std::function<void(int)> delay_ms;
+
+  // on_alert_isr is called from the gauge's interrupt callback so main/ can
+  // notify the high-priority handler task. It must be ISR-safe; the Monitor
+  // itself only sets a flag.
+  std::function<void()> on_alert_isr;
+
+  // monotonic_ms is 64-bit because 32 bits of milliseconds wrap after 24.8
+  // days and this device is meant to sit in a bag for weeks.
+  std::function<std::int64_t()> monotonic_ms;
 };
 
 std::unique_ptr<Monitor> NewMonitor(const MonitorDeps& d);

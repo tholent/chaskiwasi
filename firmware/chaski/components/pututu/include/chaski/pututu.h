@@ -27,6 +27,7 @@ enum class Verdict {
   kBadMac,
   kStaleCounter,  // replay or forgery
   kRateLimited,   // valid or not, too soon since the last SMS-triggered wake
+  kNotPersisted,  // valid and fresh, but the high-water write failed
 };
 
 // CounterStore persists the high-water counter. On the target this is NVS;
@@ -57,10 +58,29 @@ class Verifier {
 // the window (client §7).
 inline constexpr int kMinWakeIntervalMs = 5 * 60 * 1000;
 
+// The conservative start: a monotonic clock reading below this is inside the
+// window by definition. Keyed on the clock rather than on construction so a
+// wake from deep sleep — where the clock keeps running — is not gagged for a
+// minute every time, while a power loss — where it restarts near zero — is.
+inline constexpr int kBootQuietMs = 60 * 1000;
+
 struct Deps {
   CounterStore* counters = nullptr;
   std::string hmac_key;  // provisioned; never in TOML, never in logs
   std::function<std::int64_t()> monotonic_ms;
+
+  // Optional, and the difference between a rate limit that holds and one that
+  // does not: client §7 tracks the limiter in RTC memory, because the wake it
+  // limits is the one that ends a deep sleep. A Verifier constructed fresh on
+  // each wake keeps nothing, so a caller that sleeps between messages must
+  // hand the timestamp somewhere that survives — an RTC_DATA_ATTR variable —
+  // through these. Unset keeps it in the instance, which is right for host
+  // tests and for any caller that stays resident.
+  //
+  // The stored unit is the same monotonic_ms scale; 0 means "no wake yet",
+  // which is what zeroed RTC memory after power loss already says.
+  std::function<std::int64_t()> load_last_wake_ms;
+  std::function<void(std::int64_t)> store_last_wake_ms;
 };
 
 std::unique_ptr<Verifier> NewVerifier(const Deps& d);

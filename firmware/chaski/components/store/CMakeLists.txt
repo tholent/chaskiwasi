@@ -2,11 +2,11 @@
 # build as an ESP-IDF component on the target and as a plain static library on
 # the host, which is what lets the logic tiers be tested with no hardware.
 if(ESP_PLATFORM)
-  idf_component_register(SRCS "store.cpp" "fsutil.cpp"
+  idf_component_register(SRCS "store.cpp" "fsutil.cpp" "draft.cpp" "settings.cpp"
                          INCLUDE_DIRS "include"
                          REQUIRES wire)
 else()
-  add_library(chaski_store STATIC store.cpp fsutil.cpp)
+  add_library(chaski_store STATIC store.cpp fsutil.cpp draft.cpp settings.cpp)
   target_include_directories(chaski_store PUBLIC include)
   target_compile_features(chaski_store PUBLIC cxx_std_17)
   if(NOT "chaski_wire" STREQUAL "")
