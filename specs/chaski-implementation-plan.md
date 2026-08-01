@@ -212,6 +212,22 @@ committed; `make check` runs them.
 compose stack through the bridge; first `RUNLOG.md` entry; C-19 grep clean on
 that session's captured serial output.
 
+**Wave 2 status — PARTIAL.** The three agents were terminated mid-task by a
+session limit; the surviving work was stabilised and committed. Landed and
+host-tested: the USB-CDC frame codec on both sides (with generated
+cross-language vectors), `usbbridge`/`usbcdc_link`, pututu verification against
+the server's own tokens, the tier-1 kipu block and its readable log, draft and
+settings storage (closing F-C7), and wake-reason dispatch with RTC bookkeeping.
+
+Outstanding before this wave's gate can be attempted:
+- **`test/firmware/bench/` does not exist.** C-1's end-to-end half and the
+  bench halves of C-2, C-4 and C-7 are unwritten, as is the `RUNLOG.md`
+  convention. This is the largest remaining piece.
+- **`main/wake.cpp` is not linked into `app_main` or the target image** — it is
+  host-tested logic that nothing calls yet. Wiring it needs the `Jobs`
+  implementations, whose doorbell poll depends on the modem (Wave 4).
+- `tools/chaskibridge`'s serial loop is written but has never driven a device.
+
 ### Wave 3 — face and hands → CM2
 
 | Agent | Owns | Delivers |
@@ -269,6 +285,24 @@ v6.0 is newer but ahead of the vendor ecosystem — `dptechnics/walter-modem`
 v1.5.0 targets 5.x, and the modem driver is not a component to be adventurous
 with. Read §1's "newest LTS" as "newest release with long remaining support
 that the vendor driver targets".
+
+**F-C11 · The doorbell rate limiter could be used to silence the doorbell.
+RESOLVED — a closed window is no longer re-charged.**
+The first implementation charged the limiter on every *received* token,
+including one it had just refused. That slides the window forward on each
+arrival, so a token every four minutes suppresses the doorbell indefinitely.
+The limiter exists to stop a flood becoming a battery- and balance-drain
+(server §10.2); charging it this way traded that for a
+delay-the-child's-letters attack, which is the worse of the two — letters would
+wait for the six-hourly scheduled sync (§13 `sync.interval_s`) with nothing
+visibly wrong on either end, and the child would simply find their family
+quieter than it is.
+
+The binding reading of "regardless of validity": a forged or replayed token
+still **spends the window it was allowed to spend**, so garbage buys no extra
+wakes. It does not mean re-charging a window that is already closed. Found by a
+failing test in the Wave 2 build, not by review, and mutation-tested — putting
+the old behaviour back fails two tests.
 
 **F-C10 · An absent `config` field silently reset the device. RESOLVED —
 `DeviceConfig` fields are optional.**
