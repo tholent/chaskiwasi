@@ -260,8 +260,8 @@ TEST(Wire, AylluAndConfigFixtureDecodes) {
   EXPECT_FALSE(r.ayllu->contacts[2].active);
 
   ASSERT_TRUE(r.config.has_value());
-  EXPECT_EQ(r.config->max_letter_chars, 500);
-  EXPECT_EQ(r.config->sync_interval_s, 21600);
+  EXPECT_EQ(r.config->max_letter_chars.value_or(-1), 500);
+  EXPECT_EQ(r.config->sync_interval_s.value_or(-1), 21600);
   EXPECT_EQ(r.config->rat, "ltem");
   EXPECT_EQ(r.config->cover, "road");
 }
@@ -316,20 +316,24 @@ TEST(Wire, UnknownFieldsAreIgnored) {
   ASSERT_EQ(r.acks.size(), 1u);
   EXPECT_EQ(r.acks[0].status, AckStatus::kSent);
   ASSERT_TRUE(r.config.has_value());
-  EXPECT_EQ(r.config->max_letter_chars, 300);
+  EXPECT_EQ(r.config->max_letter_chars.value_or(-1), 300);
   ASSERT_TRUE(r.ayllu.has_value());
   EXPECT_EQ(r.ayllu->contacts.size(), 1u);
 }
 
-// An absent optional field falls back to its documented default rather than to
-// whatever the previous response said (client §5.5, server §13).
-TEST(Wire, AbsentConfigFieldsFallBackToServerDefaults) {
+// An absent field stays absent, so the caller leaves the device's current value
+// alone (client §5.5). Decoding it to a default would let a server that stopped
+// sending max_letter_chars silently reset every device to 500 — a config change
+// nobody made and no log records.
+TEST(Wire, AbsentConfigFieldsStayAbsent) {
   Response r;
   ASSERT_TRUE(DecodeResponse("{\"cursor\":\"c\",\"config\":{\"rat\":\"nbiot\"}}", r));
   ASSERT_TRUE(r.config.has_value());
-  EXPECT_EQ(r.config->max_letter_chars, 500);
-  EXPECT_EQ(r.config->sync_interval_s, 21600);
-  EXPECT_EQ(r.config->rat, "nbiot");
+  EXPECT_FALSE(r.config->max_letter_chars.has_value());
+  EXPECT_FALSE(r.config->sync_interval_s.has_value());
+  EXPECT_FALSE(r.config->cover.has_value());
+  ASSERT_TRUE(r.config->rat.has_value());
+  EXPECT_EQ(*r.config->rat, "nbiot");
 }
 
 // A wrong-typed field the device knows is not worth refusing a whole response

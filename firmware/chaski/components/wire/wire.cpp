@@ -127,15 +127,20 @@ bool DecodeContact(const cJSON* o, AylluContact& out) {
   return true;
 }
 
-// DecodeConfig fills an absent field from the server's own default (server
-// §13), not from whatever the device currently runs: the block is applied
-// field-by-field and the server is always allowed to overwrite it (§5.5).
+// DecodeConfig reports only what the block actually carried. An absent field
+// stays absent so the caller leaves the device's current value alone (§5.5);
+// filling it from a default here would turn a server that stopped sending a
+// field into a silent reset on every device.
 DeviceConfig DecodeConfig(const cJSON* o) {
   DeviceConfig c;
-  c.max_letter_chars = IntOr(o, "max_letter_chars", c.max_letter_chars);
-  c.sync_interval_s = IntOr(o, "sync_interval_s", c.sync_interval_s);
-  c.rat = StringOr(o, "rat", "");
-  c.cover = StringOr(o, "cover", "");
+  const cJSON* mlc = cJSON_GetObjectItemCaseSensitive(o, "max_letter_chars");
+  if (cJSON_IsNumber(mlc)) c.max_letter_chars = mlc->valueint;
+  const cJSON* si = cJSON_GetObjectItemCaseSensitive(o, "sync_interval_s");
+  if (cJSON_IsNumber(si)) c.sync_interval_s = si->valueint;
+  const cJSON* rat = cJSON_GetObjectItemCaseSensitive(o, "rat");
+  if (cJSON_IsString(rat) && rat->valuestring != nullptr) c.rat = rat->valuestring;
+  const cJSON* cover = cJSON_GetObjectItemCaseSensitive(o, "cover");
+  if (cJSON_IsString(cover) && cover->valuestring != nullptr) c.cover = cover->valuestring;
   return c;
 }
 

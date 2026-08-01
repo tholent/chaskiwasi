@@ -510,8 +510,8 @@ TEST(SyncEngine, ConfigReachesTheCallerWithUnknownFieldsAlreadyDropped) {
   const Outcome out = engine->RunOnce(Trigger::kScheduled);
   EXPECT_TRUE(out.config_updated);
   ASSERT_EQ(rig.configs.size(), 1u);
-  EXPECT_EQ(rig.configs[0].max_letter_chars, 300);
-  EXPECT_EQ(rig.configs[0].sync_interval_s, 3600);
+  EXPECT_EQ(rig.configs[0].max_letter_chars.value_or(-1), 300);
+  EXPECT_EQ(rig.configs[0].sync_interval_s.value_or(-1), 3600);
   EXPECT_EQ(rig.configs[0].rat, "ltem");
 }
 

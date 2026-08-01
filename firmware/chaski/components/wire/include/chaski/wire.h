@@ -87,13 +87,25 @@ struct Ayllu {
 
 // DeviceConfig is pushed configuration (server §4.3, §13). Content knobs only:
 // no chars_per_page, no page counts, no layout numbers of any kind (A.10).
-// Unknown fields are ignored on purpose (client §5.5).
+//
+// Every field is optional so that ABSENT is distinguishable from PRESENT.
+// §5.5 applies the block field-by-field and ignores what it does not
+// recognise; an absent field is the same case, and must leave the device's
+// current value alone. Decoding it to the server's documented default instead
+// would mean a server that stopped sending `max_letter_chars` silently reset
+// every device to 500 — a config change nobody made and no log records
+// (raised during the Wave 1 build).
 struct DeviceConfig {
-  int max_letter_chars = 500;
-  int sync_interval_s = 21600;
-  std::string rat;    // pushed to the modem (design §6.2)
-  std::string cover;  // cover composition option; may never add content
+  std::optional<int> max_letter_chars;
+  std::optional<int> sync_interval_s;
+  std::optional<std::string> rat;    // pushed to the modem (design §6.2)
+  std::optional<std::string> cover;  // never adds content to the cover (B.5)
 };
+
+// Documented server defaults (server §13), for a device that has never been
+// told otherwise. These are a starting point, NOT what an absent field means.
+inline constexpr int kDefaultMaxLetterChars = 500;
+inline constexpr int kDefaultSyncIntervalS = 21600;
 
 // Outbound is one child-authored letter awaiting submission.
 struct Outbound {

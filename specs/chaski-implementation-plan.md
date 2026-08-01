@@ -258,6 +258,19 @@ v1.5.0 targets 5.x, and the modem driver is not a component to be adventurous
 with. Read §1's "newest LTS" as "newest release with long remaining support
 that the vendor driver targets".
 
+**F-C10 · An absent `config` field silently reset the device. RESOLVED —
+`DeviceConfig` fields are optional.**
+`wire::DeviceConfig` held plain values initialised to the server's documented
+defaults, so a decoder could not tell "the server sent 500" from "the server
+sent nothing". §5.5 applies the config block field-by-field and ignores what it
+does not recognise; an absent field is that same case and must leave the
+device's current value alone. As written, a server that stopped sending
+`max_letter_chars` would silently reset every device to 500 — a configuration
+change nobody made, that no log records, and that the child would experience as
+their letters getting shorter. Fields are now `std::optional`, absent stays
+absent, and the documented defaults live in named constants for a device that
+has never been told otherwise. Raised by agent 1B as a wire-contract ambiguity.
+
 **F-C8 · utf8proc was never actually vendored. RESOLVED — vendored 2.8.0 for
 both platforms, with one upstream patch.**
 §1 said "utf8proc, vendored", and the scaffold shipped nothing: the host had
