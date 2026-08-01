@@ -167,6 +167,18 @@ integration slot at the end of the wave. Bench runs append a line to
 `test/firmware/bench/RUNLOG.md` (date, firmware sha, suite result) — the bench
 analog of CI history, since CI has no hardware.
 
+**Standing caveat — no hardware yet.** As of the CM0/CM1 build there is *no
+Walter board in the development environment at all*. Everything delivered so
+far is host-tested or build-verified; nothing has executed on the target. The
+bench tier is therefore written-and-compilable rather than passing, and skips
+with a clear message when no device is attached. Two consequences to keep
+honest: (1) a wave "gate" currently means host tests + gates + a linking target
+image, not a device run; (2) the hardware-blocked C-rows — C-1, the bench
+halves of C-2/C-4/C-7, C-8's live path, C-10 and C-24 on a real panel, C-19's
+serial grep, C-20's PPK2 numbers, C-23's fuse checks — stay open no matter how
+green the suite looks. Do not let a green `make check` be reported as a working
+device.
+
 ### Wave 0 — scaffold (serial, no subagents) → CM0
 
 IDF project skeleton building for `esp32s3` and pinned; `partitions.csv`;
