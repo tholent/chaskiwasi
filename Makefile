@@ -6,7 +6,7 @@ DOCKER ?= docker
 COMPOSE ?= $(DOCKER) compose -f deploy/compose.dev.yml
 
 .PHONY: build test vet fmt check e2e up down clean \
-        fw-hosttest fw-gates fw-vectors fw-build fw-check
+        fw-hosttest fw-gates fw-vectors fw-build fw-check fw-bench
 
 build:
 	$(GO) build ./...
@@ -58,6 +58,15 @@ fw-vectors:
 # Target build. Requires ESP-IDF: source $$IDF_PATH/export.sh first.
 fw-build:
 	cd firmware/chaski && idf.py build
+
+# The bench tier (client §15's hardware rows). With no board attached every
+# test skips with an explanation — a skip is not a pass. See
+# test/firmware/bench/README.md for flashing, provisioning and the day-one
+# instructions.
+#
+#   CHASKI_BENCH_PORT=/dev/ttyACM0 make fw-bench
+fw-bench:
+	$(GO) test -tags bench -v ./test/firmware/bench/
 
 # The full firmware gate, including the C-16 symbol scan over the linked image.
 fw-check: fw-hosttest fw-gates fw-build

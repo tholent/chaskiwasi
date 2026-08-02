@@ -220,9 +220,12 @@ the server's own tokens, the tier-1 kipu block and its readable log, draft and
 settings storage (closing F-C7), and wake-reason dispatch with RTC bookkeeping.
 
 Outstanding before this wave's gate can be attempted:
-- **`test/firmware/bench/` does not exist.** C-1's end-to-end half and the
-  bench halves of C-2, C-4 and C-7 are unwritten, as is the `RUNLOG.md`
-  convention. This is the largest remaining piece.
+- ~~`test/firmware/bench/` does not exist.~~ **Written.** C-1, the bench halves
+  of C-2 and C-4, C-7 and C-19 are implemented against the device's control
+  channel, with `README.md` (vocabulary + day-one instructions) and `RUNLOG.md`.
+  Every row skips with an explanation when no board is attached, so a skip can
+  never be mistaken for a pass. Runnable via `make fw-bench`. **Never executed:
+  no board exists yet.**
 - **`main/wake.cpp` is not linked into `app_main` or the target image** — it is
   host-tested logic that nothing calls yet. Wiring it needs the `Jobs`
   implementations, whose doorbell poll depends on the modem (Wave 4).
