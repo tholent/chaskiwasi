@@ -226,3 +226,30 @@ TEST(C11, PutAwayFromTheKeebDeckIsInterceptedBelowUiDispatch) {
   EXPECT_EQ(trace.IndexOf("ui:PUTAWAY"), -1);
   EXPECT_TRUE(trace.Contains("ui:char:97"));
 }
+
+// kErase is backspace and kBack is navigation, and they must stay distinct.
+// Conflating them makes one key mean "delete what I am writing" on one screen
+// and "leave this screen" on another — ambiguity a child pays for mid-letter
+// (§11.2). Added when the missing erase key was found during Wave 3.
+TEST(Input, EraseAndBackAreDifferentKeys) {
+  EXPECT_NE(chaski::input::kScanErase, chaski::input::kScanBack);
+
+  const KeyEvent erase = chaski::input::DecodeKeebDeck(chaski::input::kScanErase);
+  const KeyEvent back = chaski::input::DecodeKeebDeck(chaski::input::kScanBack);
+  EXPECT_EQ(erase.key, Key::kErase);
+  EXPECT_EQ(back.key, Key::kBack);
+  EXPECT_NE(erase.key, back.key);
+}
+
+// Erase repeats; navigation does not. Correcting thirty characters is otherwise
+// thirty presses, which is where a kid abandons the letter — while a repeating
+// Back would walk them out of a screen they meant to stay in.
+TEST(Input, EraseRepeatsBecauseFixingAMistakeShouldNotCostThirtyPresses) {
+  Rig rig;
+  rig.bus.Push(chaski::input::kScanErase, 200);
+  auto src = rig.New();
+  rig.PollFor(*src, 150, /*step_ms=*/10);  // 1500 ms held
+
+  EXPECT_GT(rig.events.size(), 1u) << "a held erase must repeat";
+  for (const auto& e : rig.events) EXPECT_EQ(e.key, Key::kErase);
+}

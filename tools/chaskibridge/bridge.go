@@ -119,6 +119,12 @@ type Stats struct {
 	// device reset mid-frame, or line noise. A number, never the bytes.
 	Resyncs int
 
+	// Torn counts frames damaged in transit. It is the caveat on the console
+	// capture: a torn device -> host frame carries letter bytes into the file
+	// C-19 greps, so a run with Torn > 0 has an inconclusive grep rather than a
+	// clean one. See FrameReader.Console.
+	Torn int
+
 	// TransportFails and TLSTrustFails count what the bridge could not deliver
 	// to Wasi, split the way §5.3 splits it.
 	TransportFails int

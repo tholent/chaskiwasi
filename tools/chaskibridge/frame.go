@@ -96,9 +96,20 @@ type FrameReader struct {
 	// which, on this link, is the device's serial log. Routing it out rather
 	// than dropping it is what lets a bench run capture the evidence C-19 greps
 	// (D-7). Nil discards.
+	//
+	// One caveat the C-19 assertion has to know about: a frame that is torn on
+	// the wire is not distinguishable from console text after the fact, so its
+	// bytes are discarded to Console like any other non-frame run. A device ->
+	// host frame carries the child's outbound letter, so a torn one puts letter
+	// bytes in the very capture C-19 greps. Torn counts that case; a run with
+	// Torn() > 0 makes the grep inconclusive rather than a leak. It is not fixed
+	// by swallowing the failed candidate silently: the discard granularity here
+	// is byte-for-byte the firmware decoder's (frame.cpp), and the shared stream
+	// vectors assert both sides reach the same resync count.
 	Console io.Writer
 
 	resyncs int
+	torn    int
 }
 
 // NewFrameReader reads frames from src.
@@ -109,6 +120,13 @@ func NewFrameReader(src io.Reader) *FrameReader {
 // Resyncs counts how many times bytes were discarded to find a frame boundary.
 // Content-free by construction: a count, never the bytes.
 func (fr *FrameReader) Resyncs() int { return fr.resyncs }
+
+// Torn counts candidate frames that were wholly buffered and failed their CRC:
+// a frame damaged in transit, or — vanishingly rarely — four bytes of console
+// text that read as the magic and declared a plausible length. Either way the
+// bytes end up in the Console capture, so this is the number that says whether
+// that capture is pure device log. See the Console field.
+func (fr *FrameReader) Torn() int { return fr.torn }
 
 // Next returns the next whole, CRC-checked frame, blocking on src until one
 // arrives. It returns the underlying read error (io.EOF included) when the
@@ -172,6 +190,7 @@ func (fr *FrameReader) scan() (FrameType, []byte, bool) {
 		}
 		want := binary.BigEndian.Uint32(fr.buf[frameHeaderBytes+declared : total])
 		if crc32.ChecksumIEEE(fr.buf[4:frameHeaderBytes+declared]) != want {
+			fr.torn++
 			fr.discard(1)
 			continue
 		}

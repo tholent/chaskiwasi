@@ -52,6 +52,8 @@ inline constexpr std::int64_t kRepeatIntervalMs = 120;
 //               indifferent to beyond the scancode arriving here.
 inline constexpr std::uint8_t kScanNone = 0x00;
 inline constexpr std::uint8_t kScanBack = 0x1B;
+// Backspace (0x08) is erase, distinct from kScanBack/escape which navigates.
+inline constexpr std::uint8_t kScanErase = 0x08;
 inline constexpr std::uint8_t kScanEnter = 0x0D;
 inline constexpr std::uint8_t kScanLeft = 0xB4;
 inline constexpr std::uint8_t kScanUp = 0xB5;

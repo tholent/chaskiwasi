@@ -3,5 +3,13 @@ dependencies:
   # its only caller (client §3, implementation-plan §1).
   dptechnics/walter-modem:
     version: "^1.5.0"
+
+  # LittleFS for the letter partition (client §4.1). ESP-IDF ships SPIFFS but
+  # not LittleFS, and SPIFFS has no atomic rename — which is the primitive the
+  # whole store is built on (fsutil::WriteAtomic), so this is a dependency the
+  # storage model requires rather than a preference.
+  joltwallet/littlefs:
+    version: "^1.14"
+
   idf:
     version: ">=5.5"

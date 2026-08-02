@@ -20,6 +20,7 @@ namespace {
 // held sync key must not become a radio the child cannot switch off.
 bool Repeatable(Key k) {
   switch (k) {
+    case Key::kErase:  // holding erase is how a mistake gets fixed
     case Key::kChar:
     case Key::kUp:
     case Key::kDown:
@@ -116,6 +117,7 @@ KeyEvent DecodeKeebDeck(std::uint8_t scancode) {
     case kScanFrontlight: e.key = Key::kFrontlight; return e;
     case kScanEnter: e.key = Key::kEnter; return e;
     case kScanBack: e.key = Key::kBack; return e;
+    case kScanErase: e.key = Key::kErase; return e;
     case kScanUp: e.key = Key::kUp; return e;
     case kScanDown: e.key = Key::kDown; return e;
     case kScanLeft: e.key = Key::kLeft; return e;

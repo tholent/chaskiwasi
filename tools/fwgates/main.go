@@ -207,6 +207,12 @@ func strayLiterals() ([]string, error) {
 		if err != nil {
 			return err
 		}
+		// A developer-facing call can wrap: a static_assert or a log line often
+		// puts its message on a later line than its keyword. Track whether we
+		// are still inside such a statement, or the scan flags the continuation
+		// while skipping the line that explains it.
+		inDeveloperStatement := false
+
 		for n, line := range strings.Split(string(b), "\n") {
 			t := strings.TrimSpace(line)
 			if strings.HasPrefix(t, "//") || strings.HasPrefix(t, "*") || strings.HasPrefix(t, "/*") {
@@ -215,16 +221,81 @@ func strayLiterals() ([]string, error) {
 			if strings.Contains(line, "fwgates:allow") {
 				continue
 			}
+			// Developer-facing text is not UI text. C-15 governs words rendered
+			// to a child; a log line and a static_assert message are read by
+			// whoever is holding the debugger, never by the reader of a letter,
+			// and routing them through the strings table would put diagnostics
+			// in the same file as the words on the glass.
+			//
+			// D-7 still applies to what those calls interpolate — no letter
+			// body, subject, or sender in a log at any level — but that is a
+			// question about arguments, which this scan cannot answer and the
+			// C-19 output grep can.
+			code := stripTrailingComment(line)
+			if isDeveloperFacing(code) {
+				// Still open if the statement has not been terminated yet.
+				inDeveloperStatement = !endsStatement(code)
+				continue
+			}
+			if inDeveloperStatement {
+				if endsStatement(code) {
+					inDeveloperStatement = false
+				}
+				continue
+			}
 			// Trailing comments are prose about the code, not code. A doc
 			// comment that quotes a UI string — which good ones do — must not
 			// read as that string escaping the table.
-			if m := multiWord.FindString(stripTrailingComment(line)); m != "" {
+			if m := multiWord.FindString(code); m != "" {
 				findings = append(findings, fmt.Sprintf("  %s:%d: %s", path, n+1, m))
 			}
 		}
 		return nil
 	})
 	return findings, err
+}
+
+// developerFacing are the call sites whose string arguments are diagnostics
+// rather than interface text. Kept short and explicit: every entry widens what
+// the gate will not look at, so each one has to earn its place.
+var developerFacing = []string{
+	"ESP_LOG",       // ESP_LOGE/W/I/D/V
+	"ESP_ERROR_",    // ESP_ERROR_CHECK and friends
+	"static_assert", // a message the compiler prints, not the panel
+	"assert(",
+}
+
+// endsStatement reports whether a semicolon appears outside a string literal.
+//
+// The naive Contains(";") is wrong here and wrong in a way that hides itself:
+// diagnostic messages are prose, prose contains semicolons, and treating one
+// inside a literal as the end of the statement makes the scan resume in the
+// middle of a wrapped static_assert and flag its own continuation lines.
+func endsStatement(line string) bool {
+	inStr, esc := false, false
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		switch {
+		case esc:
+			esc = false
+		case c == '\\' && inStr:
+			esc = true
+		case c == '"':
+			inStr = !inStr
+		case c == ';' && !inStr:
+			return true
+		}
+	}
+	return false
+}
+
+func isDeveloperFacing(line string) bool {
+	for _, m := range developerFacing {
+		if strings.Contains(line, m) {
+			return true
+		}
+	}
+	return false
 }
 
 // stripTrailingComment removes a // comment from a line, ignoring one that

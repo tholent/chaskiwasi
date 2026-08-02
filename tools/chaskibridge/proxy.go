@@ -119,6 +119,7 @@ func (b *Bridge) Serve(ctx context.Context, link io.ReadWriter) error {
 		t, payload, err := fr.Next()
 		b.mu.Lock()
 		b.stats.Resyncs = fr.Resyncs()
+		b.stats.Torn = fr.Torn()
 		b.mu.Unlock()
 		if err != nil {
 			if errors.Is(err, io.EOF) || ctx.Err() != nil {

@@ -86,7 +86,7 @@ func run() error {
 	s := bridge.Stats()
 	cfg.Logger.Info("bridge down", "uptime_s", int(time.Since(started).Seconds()),
 		"frames", s.Frames, "requests", s.Requests, "responses", s.Responses,
-		"resyncs", s.Resyncs, "transport_fails", s.TransportFails,
+		"resyncs", s.Resyncs, "torn", s.Torn, "transport_fails", s.TransportFails,
 		"tls_trust_fails", s.TLSTrustFails, "bytes_in", s.BytesIn, "bytes_out", s.BytesOut)
 	return serveErr
 }

@@ -20,6 +20,18 @@ enum class Key {
   kSync,        // likewise: syncs from any screen, reveals nothing
   kFrontlight,
   kChar,        // printable; see KeyEvent::codepoint
+
+  // kErase is backspace in a text field, and is deliberately NOT kBack.
+  // Conflating them makes one key mean "delete the letter I am writing" on one
+  // screen and "leave this screen" on another, which is the kind of ambiguity a
+  // child pays for mid-letter. kBack navigates; kErase deletes. It repeats,
+  // because correcting a mistake thirty characters back is otherwise thirty
+  // presses, and that is where a kid abandons the letter (§11.2).
+  //
+  // Appended rather than inserted: the enumerators above are compiled against
+  // concurrently, and renumbering them would be a silent change to every
+  // scancode table that already exists.
+  kErase,
 };
 
 struct KeyEvent {

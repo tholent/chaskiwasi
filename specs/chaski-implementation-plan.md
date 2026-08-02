@@ -286,6 +286,31 @@ v1.5.0 targets 5.x, and the modem driver is not a component to be adventurous
 with. Read §1's "newest LTS" as "newest release with long remaining support
 that the vendor driver targets".
 
+**F-C13 · There was no erase key, and `kBack` was doing both jobs. RESOLVED —
+`Key::kErase` added.**
+The `Key` enum had `kBack` and no backspace, so the compose screen used one key
+for both: it erased while the field had text and navigated once the field
+emptied. That makes "go back" silently destructive in one state and
+navigational in the next, with the child unable to predict which they will get
+and the difference being a sentence they wrote. `kErase` is now distinct —
+`kBack` navigates, `kErase` deletes — and only `kErase` repeats, because
+correcting a mistake thirty characters back is otherwise thirty presses, which
+is where a kid abandons the letter. Raised by agent 3B, which declined to add
+the enumerator itself because 3C was compiling against the header concurrently;
+appended rather than inserted so no existing scancode table was renumbered.
+
+**F-C12 · Log lines and `static_assert` messages are not UI text.** The C-15
+stray-literal scan flagged diagnostics in `main/`, which would have forced
+developer text through the strings table and put it in the same file as the
+words on the glass. The gate now skips developer-facing call sites
+(`ESP_LOG*`, `ESP_ERROR_*`, `static_assert`, `assert`), including their wrapped
+continuation lines. Two subtleties worth keeping: the semicolon test has to
+ignore semicolons *inside* string literals, because diagnostic messages are
+prose and prose contains semicolons — the naive version resumed scanning
+mid-statement and flagged the assert's own continuation. And D-7 still applies
+to what those calls interpolate; that is a question about arguments, which this
+scan cannot answer and C-19's output grep can.
+
 **F-C11 · The doorbell rate limiter could be used to silence the doorbell.
 RESOLVED — a closed window is no longer re-charged.**
 The first implementation charged the limiter on every *received* token,
