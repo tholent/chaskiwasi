@@ -1,0 +1,38 @@
+# FIRST-POWER-ON OVERLAY. NOT A BUILD VARIANT. NEVER SHIPS.
+#
+# Layered on top of sdkconfig.defaults + sdkconfig.dev for one purpose: proving
+# a brand-new Walter boots, enumerates, and answers `hello` before anything
+# irreversible happens to it.
+#
+# What it turns off and why:
+#
+# sdkconfig.defaults sets CONFIG_SECURE_FLASH_ENC_ENABLED=y in DEVELOPMENT mode
+# (D-4 — this device will get lost, so encryption at rest is the baseline). The
+# cost is that the FIRST boot of such an image generates a key, burns it plus
+# SPI_BOOT_CRYPT_CNT into eFuse, and encrypts flash in place. eFuse burns do not
+# come back. Doing that to the only board on the bench, during the session whose
+# entire question is "does this board work at all", means every later failure
+# has two candidate causes instead of one.
+#
+# The implementation plan already says where that belongs: wave 5B validates
+# "secure boot v2 + flash encryption on a sacrificial board first"
+# (chaski-implementation-plan §5B). This overlay is what keeps bring-up on the
+# near side of that line.
+#
+# NVS encryption goes with it because it is not independently selectable — it
+# requires flash encryption, and leaving it on here would fail the build rather
+# than do anything useful. The `encrypted` flag on the letters partition is
+# inert with flash encryption off; the partition table needs no change.
+#
+# Consequences while this overlay is in use, so nothing is mistaken for a pass:
+#   - D-4 is NOT satisfied. Flash and NVS are plaintext, readable off the chip.
+#   - Any letter stored during a run with this overlay is at rest in the clear.
+#     Bench letters only. Never a real one.
+#   - C-23 (the fuse ceremony) and the wave 5B encryption checks say nothing
+#     about a board that never burned a fuse.
+#
+# Drop this overlay — build with just "sdkconfig.defaults;sdkconfig.dev" — as
+# soon as the board is known good and you are ready for the fuses to burn.
+
+CONFIG_SECURE_FLASH_ENC_ENABLED=n
+CONFIG_NVS_ENCRYPTION=n
