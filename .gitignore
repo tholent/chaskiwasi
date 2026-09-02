@@ -15,7 +15,9 @@ firmware/chaski/build-*/
 firmware/chaski/sdkconfig
 firmware/chaski/sdkconfig.old
 firmware/chaski/managed_components/
-firmware/chaski/dependencies.lock
+# dependencies.lock is deliberately NOT ignored: it is the only exact pin on the
+# vendor components, since the manifest carries ranges. See "Pinned versions" in
+# firmware/chaski/README.md.
 
 # Editor swap files
 *.swp

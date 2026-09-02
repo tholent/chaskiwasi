@@ -1,0 +1,31 @@
+dependencies:
+  dptechnics/walter-modem:
+    component_hash: 72a074b3764a8533a6b2e6895e051e700b4a852aee6c9f71da4e3563bad8ae7f
+    dependencies: []
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    targets:
+    - esp32s3
+    version: 1.5.0
+  idf:
+    source:
+      type: idf
+    version: 5.5.5
+  joltwallet/littlefs:
+    component_hash: 3af20a3d75c49db9dc2286fd50862c34055c9f578419ad1f2bf7ed3ed01391fe
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.22.3
+direct_dependencies:
+- dptechnics/walter-modem
+- idf
+- joltwallet/littlefs
+manifest_hash: 254aecd957c92ee2cfe1016762bea5fce99e9b98b751b26df86cbd03a00ac99c
+target: esp32s3
+version: 2.0.0

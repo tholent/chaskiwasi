@@ -23,6 +23,16 @@ Frozen at CM0. Changing any of these is a deliberate, bench-tested act.
 | utf8proc (device) | 2.8.0 — Unicode **15.0.0** | Must agree with the server's segmenter |
 | rivo/uniseg (server) | v0.4.7 — Unicode **15.0.0** | The reference for C-9's vectors (B.7) |
 
+**`dependencies.lock` is committed, and that is the pin that actually holds.**
+The table above is a manifest of *ranges* — `^1.5.0` accepts any 1.x — so on its
+own it lets two machines resolve different vendor code from the registry and
+disagree about what "the firmware" is. The lock file records exact versions and
+component hashes (currently walter-modem 1.5.0, littlefs 1.22.3) and is what
+makes a fresh clone build the same bytes. Espressif's guidance is to commit it
+for an application; `managed_components/` stays ignored because it is fetched
+content the lock file already describes. It regenerates when the manifest or the
+IDF version changes — a diff there is a real change to review, not noise.
+
 **On "LTS":** the implementation plan called for "the newest LTS". ESP-IDF has
 no LTS designation — Espressif supports each minor release for 30 months. v5.5
 is the newest 5.x line, which is what the vendor component ecosystem targets;
