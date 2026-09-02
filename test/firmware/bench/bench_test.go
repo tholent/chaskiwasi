@@ -52,9 +52,16 @@ func newRig(t *testing.T) *rig {
 		t.Skipf("no device at %s: %v", port, err)
 	}
 
+	// The default is the compose stack's published device-sync listener, which is
+	// 18443 on the host and 8443 only inside the container network
+	// (deploy/compose.dev.yml). test/e2e uses this same literal; they must not
+	// drift, because a bench run that cannot reach Wasi fails as a sync fault and
+	// reads like a device problem. 127.0.0.1 rather than localhost: the publish is
+	// IPv4-only, so a host resolving localhost to ::1 gets a connection refused
+	// that has nothing to do with the board.
 	wasi := os.Getenv("CHASKI_BENCH_WASI")
 	if wasi == "" {
-		wasi = "https://localhost:8443/sync"
+		wasi = "https://127.0.0.1:18443/sync"
 	}
 
 	dev, err := OpenDevice(port, wasi, true)

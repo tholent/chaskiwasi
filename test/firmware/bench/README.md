@@ -47,6 +47,28 @@ export CHASKI_BENCH_TOKEN=<the dev bearer token from deploy/>
 export CHASKI_BENCH_CONTACT=c_01          # a real, active id from the ayllu
 ```
 
+The full set of knobs, so none of them has to be found by reading the suite:
+
+| Variable | Default | What it does |
+|---|---|---|
+| `CHASKI_BENCH_PORT` | — | The device node. **Unset means every test skips.** |
+| `CHASKI_BENCH_WASI` | `https://127.0.0.1:18443/sync` | Where the harness forwards the device's sync frames. The default is the compose stack's published listener; override it when Wasi is somewhere else. |
+| `CHASKI_BENCH_TOKEN` | — | Bearer token to `provision` the device with. Unset skips provisioning and uses whatever the device already holds. |
+| `CHASKI_BENCH_CONTACT` | — | An active contact id to compose to. Unset skips the rows that need one. |
+
+**If Wasi is on another machine** — a board on your laptop, the stack on a dev
+box — note that compose publishes on `127.0.0.1` only, so it is not reachable
+across the network as configured. An SSH tunnel is the least invasive fix:
+
+```sh
+ssh -L 18443:127.0.0.1:18443 <that-host>    # then the default URL just works
+```
+
+TLS verification is off in the harness (`OpenDevice(..., insecure: true)`), so
+no CA material has to travel with it. That is a bench-only affordance: the
+device's own trust path is pinned to the two private roots (§12, D-6) and is
+exercised by C-7, not by this client.
+
 **4. Run it.**
 
 ```sh
@@ -63,7 +85,7 @@ written down did not happen.
 |---|---|
 | every test skips | `CHASKI_BENCH_PORT` unset, or the port node is absent |
 | `device did not answer hello` | not a dev build, or the console is not on USB-Serial-JTAG |
-| `sync reported fault "no_signal"` | the stack is down — `make up` |
+| `sync reported fault "no_signal"` | the stack is down (`make up`), or `CHASKI_BENCH_WASI` points where nothing is listening. This fault is the harness failing to reach Wasi, not the device failing to reach the harness — check the URL before suspecting the board |
 | `sync reported fault "provisioning"` | wrong bearer token; re-`provision` |
 | `device refused compose: unknown_contact` | `CHASKI_BENCH_CONTACT` is not an active id |
 | `N torn frame(s)` in C-19 | a bad cable or a baud mismatch; the run cannot answer C-19 either way |
