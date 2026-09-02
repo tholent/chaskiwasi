@@ -11,7 +11,7 @@
 // Run it:
 //
 //	make up                                   # Wasi + strip + maddy
-//	CHASKI_BENCH_PORT=/dev/ttyACM0 \
+//	CHASKI_BENCH_PORT=/dev/ttyACM0 \         # macOS: /dev/cu.usbmodem*
 //	  go test -tags bench -v ./test/firmware/bench/
 //
 // See README.md for flashing, provisioning, and the control vocabulary.
@@ -45,8 +45,9 @@ func newRig(t *testing.T) *rig {
 
 	port := os.Getenv("CHASKI_BENCH_PORT")
 	if port == "" {
-		t.Skip("no device: set CHASKI_BENCH_PORT (e.g. /dev/ttyACM0) to run the " +
-			"bench tier. These rows are hardware-blocked and a skip is not a pass.")
+		t.Skip("no device: set CHASKI_BENCH_PORT to run the bench tier " +
+			"(Linux /dev/ttyACM0, macOS /dev/cu.usbmodem*). These rows are " +
+			"hardware-blocked and a skip is not a pass.")
 	}
 	if _, err := os.Stat(port); err != nil {
 		t.Skipf("no device at %s: %v", port, err)

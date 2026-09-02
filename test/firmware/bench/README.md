@@ -23,12 +23,46 @@ channel, which production images do not contain at all.
 . ~/esp/esp-idf/export.sh
 cd firmware/chaski
 idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.dev" build
-idf.py -p /dev/ttyACM0 flash monitor      # ctrl-] to leave the monitor
+idf.py -p $PORT flash monitor             # ctrl-] to leave the monitor
 ```
 
-You should see a `hello` line at boot. If the port is not `/dev/ttyACM0`, check
-`ls /dev/ttyACM* /dev/ttyUSB*`; on Linux you may need to be in the `dialout`
-group (`sudo usermod -aG dialout $USER`, then log out and back in).
+You should see a `hello` line at boot.
+
+**Finding `$PORT`.** Walter has no USB-serial bridge chip — the USB-C port is
+the ESP32-S3's own USB-Serial-JTAG peripheral — so it enumerates as a CDC
+device and the name is OS-specific:
+
+| | Port | Notes |
+|---|---|---|
+| Linux | `/dev/ttyACM0` | `ls /dev/ttyACM*`. Needs the `dialout` group: `sudo usermod -aG dialout $USER`, then log out and back in |
+| macOS | `/dev/cu.usbmodem*` | `ls /dev/cu.usbmodem*`. No group needed. Use `cu.`, **not** `tty.` — the `tty.` node blocks on open waiting for carrier detect and will appear to hang |
+
+Seeing `/dev/ttyUSB*` on Linux means a bridge chip, which Walter does not have
+— you are looking at some other board.
+
+**Before the first flash, decide about eFuses.** `sdkconfig.defaults` enables
+flash encryption (D-4), and the first boot of such an image burns eFuses and
+encrypts flash in place, irreversibly. That is correct for the product and a
+poor first move on a new board, where it gives every later failure a second
+possible cause. Add `sdkconfig.bringup` to the overlay list to defer it:
+
+```sh
+idf.py -B build-bringup \
+  -D SDKCONFIG=build-bringup/sdkconfig.generated \
+  -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.dev;sdkconfig.bringup" \
+  build
+idf.py -B build-bringup -p $PORT flash monitor
+```
+
+After the first configure those flags are cached in `build-bringup/`, so later
+runs need only `-B build-bringup`. Read the header of `sdkconfig.bringup` for
+what it costs while in use and when to drop it.
+
+**If `cmake` fails on a missing submodule** (`components/mqtt/esp-mqtt` is
+usually the first to error), the ESP-IDF checkout is incomplete rather than the
+project being wrong: `cd ~/esp/esp-idf && git submodule update --init
+--recursive`. `MINIMAL_BUILD` does not avoid this — IDF walks every component's
+CMakeLists to build the dependency graph before pruning to what `main` requires.
 
 **2. Bring the server up.** Wasi, `strip`, and maddy as the mail fixture — the
 same stack the server's own e2e suite uses.
@@ -42,7 +76,7 @@ contact to write to. Both live in the compose stack's config; the device is
 told its token over the control channel rather than being reflashed.
 
 ```sh
-export CHASKI_BENCH_PORT=/dev/ttyACM0
+export CHASKI_BENCH_PORT=/dev/ttyACM0     # macOS: /dev/cu.usbmodem*
 export CHASKI_BENCH_TOKEN=<the dev bearer token from deploy/>
 export CHASKI_BENCH_CONTACT=c_01          # a real, active id from the ayllu
 ```
